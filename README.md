@@ -1,5 +1,9 @@
 # Coinalyze Aggregated Predicted Funding Rate API
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Bun](https://img.shields.io/badge/Bun-1.0+-black?logo=bun)](https://bun.sh)
+[![GitHub stars](https://img.shields.io/github/stars/tarikcaykara/coinalyze-aggregated-funding?style=social)](https://github.com/tarikcaykara/coinalyze-aggregated-funding)
+
 Unofficial Bun + JavaScript wrapper for Coinalyze.net API that calculates **aggregated (open interest weighted) predicted funding rate**, including real-time value and historical data.
 
 Coinalyze provides per-exchange predicted funding rates but **does not expose the aggregated (OI-weighted) value directly in the API**. This project replicates the site's "Aggregated Predicted Funding Rate" chart (including "AVG close 10") by fetching raw data and computing the weighted average.
@@ -8,7 +12,7 @@ Coinalyze provides per-exchange predicted funding rates but **does not expose th
 
 - Real-time aggregated predicted funding rate (OI-weighted across major exchanges)
 - Historical aggregated predicted funding rate data (exact replica of Coinalyze chart)
-- Simple Express.js API endpoints
+- Native `Bun.serve` with declarative routes
 - Built with **Bun** (ultra-fast runtime) and **plain JavaScript**
 - Easy to extend (caching, more intervals, other assets, etc.)
 
@@ -26,16 +30,16 @@ Coinalyze provides per-exchange predicted funding rates but **does not expose th
    ```
 
 3. Create a `.env` file (get your free API key from [coinalyze.net](https://coinalyze.net)):
-   ```bash
+   ```env
    COINALYZE_API_KEY=your_api_key_here
    PORT=3000  # optional
    ```
 
 4. Run the server:
    ```bash
-   bun dev   # development mode with --watch
+   bun dev   # development mode (auto-restart on changes)
    # or
-   bun start
+   bun start # production mode
    ```
 
 ## API Endpoints
@@ -63,7 +67,7 @@ Returns historical aggregated predicted funding rate data.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `interval` | string | `1h` | Time interval (`1m`, `1hour`, `8hourdaily`, etc.) |
+| `interval` | string | `1h` | Time interval (`1m`, `1hour`, `8hour`, `daily`, etc.) |
 | `days` | number | `7` | Number of days to fetch |
 | `from` | number | - | Start timestamp (UNIX seconds) |
 | `to` | number | - | End timestamp (UNIX seconds) |
