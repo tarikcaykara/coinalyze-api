@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black?logo=bun)](https://bun.sh)
-[![GitHub stars](https://img.shields.io/github/stars/tarikcaykara/coinalyze-aggregated-funding?style=social)](https://github.com/tarikcaykara/coinalyze-aggregated-funding)
+[![GitHub stars](https://img.shields.io/github/stars/tarikcaykara/coinalyze-api?style=social)](https://github.com/tarikcaykara/coinalyze-api/stargazers)
 
 Unofficial Bun + JavaScript wrapper for Coinalyze.net API that calculates **aggregated (open interest weighted) predicted funding rate**, including real-time value and historical data.
 
@@ -20,8 +20,8 @@ Coinalyze provides per-exchange predicted funding rates but **does not expose th
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/tarikcaykara/coinalyze-aggregated-funding.git
-   cd coinalyze-aggregated-funding
+   git clone https://github.com/tarikcaykara/coinalyze-api.git
+   cd coinalyze-api
    ```
 
 2. Install dependencies:
