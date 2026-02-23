@@ -2,11 +2,11 @@
   "name": "coinalyze-api",
   "private": true,
   "scripts": {
-    "dev": "bun --watch server.js",
-    "start": "bun server.js"
+    "scrape": "bun run scraper_new.js"
   },
   "type": "module",
   "dependencies": {
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "playwright": "^1.58.2"
   }
 }
