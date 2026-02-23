@@ -1,12 +1,11 @@
 {
-  "name": "coinalyze-api",
+  "name": "coinalyze-scraper",
   "private": true,
   "scripts": {
-    "scrape": "bun run scraper_new.js"
+    "scrape": "bun run scraper.js"
   },
   "type": "module",
   "dependencies": {
-    "dotenv": "^17.2.3",
     "playwright": "^1.58.2"
   }
 }

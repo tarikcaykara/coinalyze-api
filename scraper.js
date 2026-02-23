@@ -1,5 +1,14 @@
 import { chromium } from "playwright";
 
+const CONFIG = {
+  url: "https://coinalyze.net/ethereum/funding-rate/",
+  outputFile: "./funding_rate.json",
+  coin: "ethereum",
+  timeframe: "1D",
+  cloudflareTimeout: 120000,
+  iframeTimeout: 30000,
+};
+
 const isCloudflareBlocked = async (page) => {
   return page.evaluate(() => {
     const title = (document.title || "").toLowerCase();
@@ -12,7 +21,7 @@ const isCloudflareBlocked = async (page) => {
   });
 };
 
-const waitUntilUnblocked = async (page, timeoutMs = 120000) => {
+const waitUntilUnblocked = async (page, timeoutMs = CONFIG.cloudflareTimeout) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (!(await isCloudflareBlocked(page))) return true;
@@ -21,12 +30,12 @@ const waitUntilUnblocked = async (page, timeoutMs = 120000) => {
   return false;
 };
 
-const waitForBlobFrame = async (page, timeoutMs = 30000) => {
+const waitForBlobFrame = async (page, timeoutMs = CONFIG.iframeTimeout) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const blobFrame = page
       .frames()
-      .find((f) => f.url().startsWith("blob:https://coinalyze.net"));
+      .find((f) => f.url().startsWith(`blob:${new URL(CONFIG.url).origin}`));
     if (blobFrame) return true;
     await new Promise((r) => setTimeout(r, 2000));
   }
@@ -50,9 +59,10 @@ const scrapeAggregatedFundingRate = async () => {
 
   const browser = await chromium.launch({ headless: false });
   const page = await browser.newPage();
+  let hasError = false;
 
   try {
-    await page.goto("https://coinalyze.net/ethereum/funding-rate/", {
+    await page.goto(CONFIG.url, {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
@@ -72,12 +82,10 @@ const scrapeAggregatedFundingRate = async () => {
     await page.waitForTimeout(2000);
 
     const frames = page.frames();
+    const origin = new URL(CONFIG.url).origin;
     const relevantFrames = frames.filter((f) => {
       const url = f.url();
-      return (
-        url.startsWith("blob:https://coinalyze.net") ||
-        url.includes("coinalyze.net/ethereum")
-      );
+      return url.startsWith(`blob:${origin}`) || url.includes(CONFIG.url);
     });
     console.log(
       `frames: ${frames.length} total, ${relevantFrames.length} relevant`,
@@ -87,15 +95,16 @@ const scrapeAggregatedFundingRate = async () => {
 
     for (const frame of relevantFrames) {
       try {
+        const tf = CONFIG.timeframe;
         const buttons = frame.locator(
-          '[class*="resolution"]:text-is("1D"), button:text-is("1D"), div:text-is("1D"), span:text-is("1D")',
+          `[class*="resolution"]:text-is("${tf}"), button:text-is("${tf}"), div:text-is("${tf}"), span:text-is("${tf}")`,
         );
         const count = await buttons.count();
         for (let i = 0; i < count; i++) {
           await buttons.nth(i).click({ timeout: 2000 });
           clickCount++;
           console.log(
-            `clicked 1D #${clickCount} in frame: ${frame.url().substring(0, 60)}`,
+            `clicked ${CONFIG.timeframe} #${clickCount} in frame: ${frame.url().substring(0, 60)}`,
           );
           await page.waitForTimeout(500);
         }
@@ -104,10 +113,10 @@ const scrapeAggregatedFundingRate = async () => {
       }
     }
 
-    console.log(`clicked 1D buttons total: ${clickCount}`);
+    console.log(`clicked ${CONFIG.timeframe} buttons total: ${clickCount}`);
 
     if (clickCount === 0) {
-      throw new Error("could not click any 1D timeframe button");
+      throw new Error(`could not click any ${CONFIG.timeframe} timeframe button`);
     }
 
     await page.waitForTimeout(10000);
@@ -153,17 +162,21 @@ const scrapeAggregatedFundingRate = async () => {
 
     const result = {
       aggregated_predicted_funding_rate: predictedValue,
+      coin: CONFIG.coin,
+      timeframe: CONFIG.timeframe,
       timestamp: Date.now(),
-      source: "coinalyze.net",
     };
 
-    await Bun.write("./funding_rate.json", JSON.stringify(result, null, 2));
-    console.log("saved to funding_rate.json");
+    await Bun.write(CONFIG.outputFile, JSON.stringify(result, null, 2));
+    console.log(`saved to ${CONFIG.outputFile}`);
   } catch (error) {
     console.error(`scraping error: ${error.message}`);
+    hasError = true;
   } finally {
     await browser.close();
   }
+
+  if (hasError) process.exit(1);
 };
 
 scrapeAggregatedFundingRate();

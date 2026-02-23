@@ -1,111 +1,68 @@
-# Coinalyze Aggregated Predicted Funding Rate API
+# Coinalyze Aggregated Predicted Funding Rate Scraper
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black?logo=bun)](https://bun.sh)
-[![GitHub stars](https://img.shields.io/github/stars/tarikcaykara/coinalyze-api?style=social)](https://github.com/tarikcaykara/coinalyze-api/stargazers)
+[![Playwright](https://img.shields.io/badge/Playwright-1.58+-green?logo=playwright)](https://playwright.dev)
 
-Unofficial Bun + JavaScript wrapper for Coinalyze.net API that calculates **aggregated (open interest weighted) predicted funding rate**, including real-time value and historical data.
+Scrapes the **Aggregated Predicted Funding Rate AVG close 10** value directly from the [Coinalyze](https://coinalyze.net/ethereum/funding-rate/) TradingView chart and saves it to a JSON file.
 
-Coinalyze provides per-exchange predicted funding rates but **does not expose the aggregated (OI-weighted) value directly in the API**. This project replicates the site's "Aggregated Predicted Funding Rate" chart (including "AVG close 10") by fetching raw data and computing the weighted average.
+Coinalyze does not expose this aggregated value via their public API, and manual calculation from per-exchange data produces inconsistent results due to proprietary server-side aggregation. This scraper bypasses both issues by reading the exact rendered value from the chart.
 
-## Features
+## How it works
 
-- Real-time aggregated predicted funding rate (OI-weighted across major exchanges)
-- Historical aggregated predicted funding rate data (exact replica of Coinalyze chart)
-- Native `Bun.serve` with declarative routes
-- Built with **Bun** (ultra-fast runtime) and **plain JavaScript**
-- Easy to extend (caching, more intervals, other assets, etc.)
+1. Launches Chromium via Playwright (headed mode)
+2. Navigates to `coinalyze.net/ethereum/funding-rate/`
+3. Handles Cloudflare challenge if present (auto-waits up to 2 minutes)
+4. Waits for the TradingView `blob:` iframe to load
+5. Clicks the **1D** timeframe button inside the chart
+6. Reads the "Aggregated Predicted Funding Rate AVG close 10" value from the chart legend
+7. Saves the result to `funding_rate.json`
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/tarikcaykara/coinalyze-api.git
-   cd coinalyze-api
-   ```
+```bash
+git clone https://github.com/tarikcaykara/coinalyze-api.git
+cd coinalyze-api
+bun install
+```
 
-2. Install dependencies:
-   ```bash
-   bun install
-   ```
+## Usage
 
-3. Create a `.env` file (get your free API key from [coinalyze.net](https://coinalyze.net)):
-   ```env
-   COINALYZE_API_KEY=your_api_key_here
-   PORT=3000  # optional
-   ```
+```bash
+bun run scrape
+```
 
-4. Run the server:
-   ```bash
-   bun dev   # development mode (auto-restart on changes)
-   # or
-   bun start # production mode
-   ```
+## Output
 
-## API Endpoints
-
-Server runs on `http://localhost:3000` by default.
-
-### GET `/api/aggregated-predicted-funding-rate`
-
-Returns current aggregated predicted funding rate (OI-weighted).
-
-**Example response:**
+The scraper writes `funding_rate.json`:
 
 ```json
 {
-  "aggregated_predicted_funding_rate": 0.0032,
-  "timestamp": "2026-01-21T15:02:00.000Z"
+  "aggregated_predicted_funding_rate": -0.0004,
+  "coin": "ethereum",
+  "timeframe": "1D",
+  "timestamp": 1771841006455
 }
 ```
 
-### GET `/api/aggregated-predicted-history`
+| Field                               | Description                                |
+| ----------------------------------- | ------------------------------------------ |
+| `aggregated_predicted_funding_rate` | The extracted value (positive or negative) |
+| `coin`                              | Target cryptocurrency                      |
+| `timeframe`                         | Chart timeframe used for scraping          |
+| `timestamp`                         | UNIX timestamp in milliseconds             |
 
-Returns historical aggregated predicted funding rate data.
+## Requirements
 
-**Query Parameters:**
+- [Bun](https://bun.sh) 1.0+
+- [Playwright](https://playwright.dev) (installed via `bun install`)
+- Chromium (Playwright downloads it automatically)
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `interval` | string | `1h` | Time interval (`1m`, `1hour`, `8hour`, `daily`, etc.) |
-| `days` | number | `7` | Number of days to fetch |
-| `from` | number | - | Start timestamp (UNIX seconds) |
-| `to` | number | - | End timestamp (UNIX seconds) |
+## Notes
 
-**Example response:**
-
-```json
-{
-  "history": [
-    { "t": 1700000000, "c": 0.0028 },
-    { "t": 1700003600, "c": 0.0031 },
-    { "t": 1700007200, "c": 0.0032 }
-  ],
-  "avgClose10": 0.0032,
-  "latestAggregated": 0.0032,
-  "timestamp": "2026-01-21T15:02:00.000Z"
-}
-```
-
-## Notes & Disclaimer
-
-- This is an unofficial project – use at your own risk
-- Respect Coinalyze rate limits (~40 requests/min on free plan)
-- Always use your own API key (personal/non-commercial use recommended)
-- For production use, consider adding caching to reduce API calls
-
-## Contributing
-
-Contributions are welcome! Some ideas:
-
-- Add support for more assets (BTC, SOL, etc.)
-- Implement in-memory or Redis caching
-- Add WebSocket for real-time updates
-- Build a simple frontend dashboard with charts
-- Improve error handling and rate limit management
-
-Fork the repo, create a branch, and open a Pull Request.
+- Runs in **headed mode** (`headless: false`) to bypass Cloudflare browser verification
+- Handles both standard hyphen-minus and Unicode minus sign (U+2212) for negative values
+- Scrapes the chart legend text, not the canvas — the TradingView chart renders on `<canvas>` but exposes indicator values in DOM text
 
 ## License
 
-MIT License – feel free to use, modify, and distribute.
+MIT
