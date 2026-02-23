@@ -4,7 +4,7 @@ const CONFIG = {
   url: "https://coinalyze.net/ethereum/funding-rate/",
   outputFile: "./funding_rate.json",
   coin: "ethereum",
-  timeframe: "1D",
+  timeframe: "1 minute",
   cloudflareTimeout: 120000,
   iframeTimeout: 30000,
 };
@@ -79,7 +79,7 @@ const scrapeAggregatedFundingRate = async () => {
 
     const hasBlobFrame = await waitForBlobFrame(page);
     if (!hasBlobFrame) throw new Error("chart iframe not loaded within 30s");
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(5000);
 
     const frames = page.frames();
     const origin = new URL(CONFIG.url).origin;
@@ -95,19 +95,28 @@ const scrapeAggregatedFundingRate = async () => {
 
     for (const frame of relevantFrames) {
       try {
-        const tf = CONFIG.timeframe;
-        const buttons = frame.locator(
-          `[class*="resolution"]:text-is("${tf}"), button:text-is("${tf}"), div:text-is("${tf}"), span:text-is("${tf}")`,
+        const btn = frame.locator('button[aria-label="1 minute"]').first();
+        const count = await btn.count();
+        console.log(
+          `frame ${frame.url().substring(0, 50)}: 1m button count = ${count}`,
         );
-        const count = await buttons.count();
-        for (let i = 0; i < count; i++) {
-          await buttons.nth(i).click({ timeout: 2000 });
+        if (count === 0) {
+          const fallback = frame.locator('button:has-text("1m")').first();
+          const fbCount = await fallback.count();
+          console.log(`  fallback "1m" text count = ${fbCount}`);
+          if (fbCount === 0) continue;
+          await fallback.waitFor({ state: "visible", timeout: 10000 });
+          await fallback.click({ timeout: 3000 });
           clickCount++;
           console.log(
-            `clicked ${CONFIG.timeframe} #${clickCount} in frame: ${frame.url().substring(0, 60)}`,
+            `clicked 1m (fallback) in frame: ${frame.url().substring(0, 60)}`,
           );
-          await page.waitForTimeout(500);
+          continue;
         }
+        await btn.waitFor({ state: "visible", timeout: 10000 });
+        await btn.click({ timeout: 3000 });
+        clickCount++;
+        console.log(`clicked 1m in frame: ${frame.url().substring(0, 60)}`);
       } catch {
         continue;
       }
@@ -163,7 +172,6 @@ const scrapeAggregatedFundingRate = async () => {
     const result = {
       aggregated_predicted_funding_rate: predictedValue,
       coin: CONFIG.coin,
-      timeframe: CONFIG.timeframe,
       timestamp: Date.now(),
     };
 
