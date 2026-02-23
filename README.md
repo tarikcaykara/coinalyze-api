@@ -13,7 +13,7 @@ Coinalyze does not expose this aggregated value via their public API, and manual
 2. Navigates to `coinalyze.net/ethereum/funding-rate/`
 3. Handles Cloudflare challenge if present (auto-waits up to 2 minutes)
 4. Waits for the TradingView `blob:` iframe to load
-5. Clicks the **1D** timeframe button inside the chart
+5. Opens the resolution dropdown and selects **1 minute**
 6. Reads the "Aggregated Predicted Funding Rate AVG close 10" value from the chart legend
 7. Saves the result to `funding_rate.json`
 
@@ -39,7 +39,6 @@ The scraper writes `funding_rate.json`:
 {
   "aggregated_predicted_funding_rate": -0.0004,
   "coin": "ethereum",
-  "timeframe": "1D",
   "timestamp": 1771841006455
 }
 ```
@@ -48,7 +47,6 @@ The scraper writes `funding_rate.json`:
 | ----------------------------------- | ------------------------------------------ |
 | `aggregated_predicted_funding_rate` | The extracted value (positive or negative) |
 | `coin`                              | Target cryptocurrency                      |
-| `timeframe`                         | Chart timeframe used for scraping          |
 | `timestamp`                         | UNIX timestamp in milliseconds             |
 
 ## Requirements
