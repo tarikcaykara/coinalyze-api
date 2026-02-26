@@ -1,4 +1,7 @@
-import { chromium } from "playwright";
+import { chromium } from "playwright-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+chromium.use(StealthPlugin());
 
 const CONFIG = {
   url: "https://coinalyze.net/ethereum/funding-rate/",
@@ -57,7 +60,7 @@ const readLegendValue = async (frame) => {
 const scrapeAggregatedFundingRate = async () => {
   console.log("scraping started");
 
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   let hasError = false;
 
