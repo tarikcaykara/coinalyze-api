@@ -2,7 +2,8 @@
   "name": "coinalyze-scraper",
   "private": true,
   "scripts": {
-    "scrape": "bun run scraper.js"
+    "scrape": "bun run scraper.js",
+    "start": "bun run scraper.js --loop"
   },
   "type": "module",
   "dependencies": {
