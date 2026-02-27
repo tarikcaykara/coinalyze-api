@@ -10,6 +10,8 @@ const CONFIG = {
   timeframe: "1 minute",
   cloudflareTimeout: 120000,
   iframeTimeout: 30000,
+  intervalMs: 60 * 1000,
+  sessionRefreshMs: 60 * 60 * 1000,
 };
 
 const isCloudflareBlocked = async (page) => {
@@ -57,137 +59,237 @@ const readLegendValue = async (frame) => {
   });
 };
 
-const scrapeAggregatedFundingRate = async () => {
+const loadPage = async (page) => {
+  await page.goto(CONFIG.url, {
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
+  });
+
+  await page
+    .waitForLoadState("networkidle", { timeout: 20000 })
+    .catch(() => {});
+
+  if (await isCloudflareBlocked(page)) {
+    console.log("cloudflare challenge detected, waiting...");
+    const passed = await waitUntilUnblocked(page);
+    if (!passed) throw new Error("cloudflare challenge timeout");
+  }
+
+  const hasBlobFrame = await waitForBlobFrame(page);
+  if (!hasBlobFrame) throw new Error("chart iframe not loaded within 30s");
+  await page.waitForTimeout(5000);
+};
+
+const clickTimeframe = async (relevantFrames) => {
+  let clickCount = 0;
+
+  for (const frame of relevantFrames) {
+    try {
+      const btn = frame.locator('button[aria-label="1 minute"]').first();
+      const count = await btn.count();
+      console.log(
+        `frame ${frame.url().substring(0, 50)}: 1m button count = ${count}`,
+      );
+      if (count === 0) {
+        const fallback = frame.locator('button:has-text("1m")').first();
+        const fbCount = await fallback.count();
+        console.log(`  fallback "1m" text count = ${fbCount}`);
+        if (fbCount === 0) continue;
+        await fallback.waitFor({ state: "visible", timeout: 10000 });
+        await fallback.click({ timeout: 3000 });
+        clickCount++;
+        console.log(
+          `clicked 1m (fallback) in frame: ${frame.url().substring(0, 60)}`,
+        );
+        continue;
+      }
+      await btn.waitFor({ state: "visible", timeout: 10000 });
+      await btn.click({ timeout: 3000 });
+      clickCount++;
+      console.log(`clicked 1m in frame: ${frame.url().substring(0, 60)}`);
+    } catch {
+      continue;
+    }
+  }
+
+  console.log(`clicked ${CONFIG.timeframe} buttons total: ${clickCount}`);
+
+  if (clickCount === 0) {
+    throw new Error(`could not click any ${CONFIG.timeframe} timeframe button`);
+  }
+};
+
+const getRelevantFrames = (page) => {
+  const frames = page.frames();
+  const origin = new URL(CONFIG.url).origin;
+  const relevantFrames = frames.filter((f) => {
+    const url = f.url();
+    return url.startsWith(`blob:${origin}`) || url.includes(CONFIG.url);
+  });
+  console.log(
+    `frames: ${frames.length} total, ${relevantFrames.length} relevant`,
+  );
+  return relevantFrames;
+};
+
+const readAndSave = async (relevantFrames) => {
+  let predictedValue = null;
+
+  for (const frame of relevantFrames) {
+    try {
+      const value = await readLegendValue(frame);
+      if (value !== null) {
+        console.log(
+          `found value ${value} in frame: ${frame.url().substring(0, 60)}`,
+        );
+        predictedValue = value;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (predictedValue === null) {
+    console.log("regex failed, trying full text dump...");
+    for (const frame of relevantFrames) {
+      try {
+        const text = await frame.evaluate(
+          () => document.body?.innerText || "",
+        );
+        if (text.toLowerCase().includes("predicted")) {
+          console.log(
+            `--- frame text (${frame.url().substring(0, 60)}) ---`,
+          );
+          console.log(text.substring(0, 2000));
+          console.log("---");
+        }
+      } catch {
+        continue;
+      }
+    }
+    throw new Error("could not read predicted funding rate from chart");
+  }
+
+  console.log(`aggregated predicted funding rate avg close 10: ${predictedValue}`);
+
+  const result = {
+    aggregated_predicted_funding_rate: predictedValue,
+    coin: CONFIG.coin,
+    timestamp: Date.now(),
+  };
+
+  await Bun.write(CONFIG.outputFile, JSON.stringify(result, null, 2));
+  console.log(`saved to ${CONFIG.outputFile}`);
+};
+
+const scrapeOnce = async () => {
   console.log("scraping started");
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-  let hasError = false;
 
   try {
-    await page.goto(CONFIG.url, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000,
-    });
-
-    await page
-      .waitForLoadState("networkidle", { timeout: 20000 })
-      .catch(() => {});
-
-    if (await isCloudflareBlocked(page)) {
-      console.log("cloudflare challenge detected, waiting...");
-      const passed = await waitUntilUnblocked(page);
-      if (!passed) throw new Error("cloudflare challenge timeout");
-    }
-
-    const hasBlobFrame = await waitForBlobFrame(page);
-    if (!hasBlobFrame) throw new Error("chart iframe not loaded within 30s");
-    await page.waitForTimeout(5000);
-
-    const frames = page.frames();
-    const origin = new URL(CONFIG.url).origin;
-    const relevantFrames = frames.filter((f) => {
-      const url = f.url();
-      return url.startsWith(`blob:${origin}`) || url.includes(CONFIG.url);
-    });
-    console.log(
-      `frames: ${frames.length} total, ${relevantFrames.length} relevant`,
-    );
-
-    let clickCount = 0;
-
-    for (const frame of relevantFrames) {
-      try {
-        const btn = frame.locator('button[aria-label="1 minute"]').first();
-        const count = await btn.count();
-        console.log(
-          `frame ${frame.url().substring(0, 50)}: 1m button count = ${count}`,
-        );
-        if (count === 0) {
-          const fallback = frame.locator('button:has-text("1m")').first();
-          const fbCount = await fallback.count();
-          console.log(`  fallback "1m" text count = ${fbCount}`);
-          if (fbCount === 0) continue;
-          await fallback.waitFor({ state: "visible", timeout: 10000 });
-          await fallback.click({ timeout: 3000 });
-          clickCount++;
-          console.log(
-            `clicked 1m (fallback) in frame: ${frame.url().substring(0, 60)}`,
-          );
-          continue;
-        }
-        await btn.waitFor({ state: "visible", timeout: 10000 });
-        await btn.click({ timeout: 3000 });
-        clickCount++;
-        console.log(`clicked 1m in frame: ${frame.url().substring(0, 60)}`);
-      } catch {
-        continue;
-      }
-    }
-
-    console.log(`clicked ${CONFIG.timeframe} buttons total: ${clickCount}`);
-
-    if (clickCount === 0) {
-      throw new Error(`could not click any ${CONFIG.timeframe} timeframe button`);
-    }
-
+    await loadPage(page);
+    const relevantFrames = getRelevantFrames(page);
+    await clickTimeframe(relevantFrames);
     await page.waitForTimeout(10000);
-
-    let predictedValue = null;
-
-    for (const frame of relevantFrames) {
-      try {
-        const value = await readLegendValue(frame);
-        if (value !== null) {
-          console.log(
-            `found value ${value} in frame: ${frame.url().substring(0, 60)}`,
-          );
-          predictedValue = value;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    if (predictedValue === null) {
-      console.log("regex failed, trying full text dump...");
-      for (const frame of relevantFrames) {
-        try {
-          const text = await frame.evaluate(
-            () => document.body?.innerText || "",
-          );
-          if (text.toLowerCase().includes("predicted")) {
-            console.log(
-              `--- frame text (${frame.url().substring(0, 60)}) ---`,
-            );
-            console.log(text.substring(0, 2000));
-            console.log("---");
-          }
-        } catch {
-          continue;
-        }
-      }
-      throw new Error("could not read predicted funding rate from chart");
-    }
-
-    console.log(`aggregated predicted funding rate avg close 10: ${predictedValue}`);
-
-    const result = {
-      aggregated_predicted_funding_rate: predictedValue,
-      coin: CONFIG.coin,
-      timestamp: Date.now(),
-    };
-
-    await Bun.write(CONFIG.outputFile, JSON.stringify(result, null, 2));
-    console.log(`saved to ${CONFIG.outputFile}`);
+    await readAndSave(relevantFrames);
   } catch (error) {
     console.error(`scraping error: ${error.message}`);
-    hasError = true;
-  } finally {
     await browser.close();
+    process.exit(1);
   }
 
-  if (hasError) process.exit(1);
+  await browser.close();
 };
 
-scrapeAggregatedFundingRate();
+const runLoop = async () => {
+  console.log(`scraper loop started, interval: ${CONFIG.intervalMs / 1000}s`);
+
+  const browser = await chromium.launch({ headless: true });
+  let page = await browser.newPage();
+  let lastFullLoad = 0;
+
+  const fullLoad = async () => {
+    await loadPage(page);
+    const frames = getRelevantFrames(page);
+    await clickTimeframe(frames);
+    await page.waitForTimeout(10000);
+    lastFullLoad = Date.now();
+    return frames;
+  };
+
+  try {
+    let relevantFrames = await fullLoad();
+    await readAndSave(relevantFrames);
+
+    while (true) {
+      console.log(
+        `next reload at ${new Date(Date.now() + CONFIG.intervalMs).toLocaleTimeString()}`,
+      );
+      await new Promise((r) => setTimeout(r, CONFIG.intervalMs));
+
+      try {
+        const needsFullLoad =
+          Date.now() - lastFullLoad > CONFIG.sessionRefreshMs;
+
+        if (needsFullLoad) {
+          console.log("session refresh: full page load");
+          relevantFrames = await fullLoad();
+        } else {
+          await page.reload({
+            waitUntil: "domcontentloaded",
+            timeout: 60000,
+          });
+
+          if (await isCloudflareBlocked(page)) {
+            console.log("cloudflare re-challenge after reload, waiting...");
+            const passed = await waitUntilUnblocked(page);
+            if (!passed) {
+              console.log("cloudflare timeout, attempting full reload...");
+              relevantFrames = await fullLoad();
+              await readAndSave(relevantFrames);
+              continue;
+            }
+          }
+
+          await waitForBlobFrame(page);
+          await page.waitForTimeout(3000);
+          relevantFrames = getRelevantFrames(page);
+        }
+
+        await readAndSave(relevantFrames);
+      } catch (error) {
+        console.error(`cycle error: ${error.message}, will retry next cycle`);
+
+        try {
+          console.log("attempting recovery with full page load...");
+          relevantFrames = await fullLoad();
+        } catch (recoveryError) {
+          console.error(`recovery failed: ${recoveryError.message}`);
+          console.log("reopening browser...");
+          await browser.close().catch(() => {});
+          const newBrowser = await chromium.launch({ headless: true });
+          page = await newBrowser.newPage();
+          try {
+            relevantFrames = await fullLoad();
+          } catch (fatalError) {
+            console.error(`fatal: ${fatalError.message}, will retry next cycle`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`fatal error: ${error.message}`);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+};
+
+const isLoop = process.argv.includes("--loop");
+
+if (isLoop) {
+  runLoop();
+} else {
+  scrapeOnce();
+}
