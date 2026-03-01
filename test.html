@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coinalyze Funding Rate - WebSocket Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 460px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+    }
+
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      padding: 10px 14px;
+      background: #0d1117;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.disconnected { background: #f85149; }
+    .status-dot.connecting { background: #d29922; }
+    .status-dot.connected { background: #3fb950; }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: #8b949e;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-family: monospace;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus { border-color: #58a6ff; }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-connect {
+      background: #238636;
+      color: #fff;
+    }
+
+    .btn-disconnect {
+      background: #da3633;
+      color: #fff;
+    }
+
+    .data-card {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .data-label {
+      font-size: 11px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .data-value {
+      font-size: 36px;
+      font-weight: 700;
+      font-family: monospace;
+      color: #e6edf3;
+      margin-bottom: 12px;
+      min-height: 44px;
+    }
+
+    .data-value.positive { color: #3fb950; }
+    .data-value.negative { color: #f85149; }
+
+    .data-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #8b949e;
+      border-top: 1px solid #21262d;
+      padding-top: 12px;
+      margin-top: 4px;
+    }
+
+    .log {
+      margin-top: 20px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 160px;
+      overflow-y: auto;
+      font-size: 12px;
+      font-family: monospace;
+      line-height: 1.6;
+    }
+
+    .log-entry { color: #8b949e; }
+    .log-entry.error { color: #f85149; }
+    .log-entry.success { color: #3fb950; }
+    .log-entry.info { color: #58a6ff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Coinalyze Funding Rate</h1>
+
+    <div class="status-bar">
+      <div class="status-dot disconnected" id="statusDot"></div>
+      <span id="statusText">Disconnected</span>
+    </div>
+
+    <div class="form-group">
+      <label>WebSocket URL</label>
+      <input type="text" id="wsUrl">
+    </div>
+
+    <div class="form-group">
+      <label>Auth Token</label>
+      <input id="authToken" value="test-token">
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-connect" id="btnConnect" onclick="connect()">Connect</button>
+      <button class="btn-disconnect" id="btnDisconnect" onclick="disconnect()" disabled>Disconnect</button>
+    </div>
+
+    <div class="data-card">
+      <div class="data-label">Aggregated Predicted Funding Rate (AVG close 10)</div>
+      <div class="data-value" id="rateValue">--</div>
+      <div class="data-meta">
+        <span id="coinLabel">--</span>
+        <span id="timestampLabel">--</span>
+      </div>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    let ws = null;
+    let autoReconnect = false;
+    let reconnectTimer = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+    $("wsUrl").value = `${wsProto}//${location.host}/ws`;
+
+    function setStatus(state, text) {
+      $("statusDot").className = `status-dot ${state}`;
+      $("statusText").textContent = text;
+    }
+
+    function log(msg, type = "") {
+      const el = $("log");
+      const time = new Date().toLocaleTimeString();
+      el.innerHTML += `<div class="log-entry ${type}">[${time}] ${msg}</div>`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function updateDisplay(data) {
+      const rate = data.aggregated_predicted_funding_rate;
+      const el = $("rateValue");
+      el.textContent = rate;
+      el.className = `data-value ${rate >= 0 ? "positive" : "negative"}`;
+      $("coinLabel").textContent = data.coin?.toUpperCase() || "--";
+      $("timestampLabel").textContent = data.timestamp
+        ? new Date(data.timestamp).toLocaleTimeString()
+        : "--";
+    }
+
+    function connect() {
+      if (ws) return;
+
+      const url = $("wsUrl").value;
+      const token = $("authToken").value;
+
+      setStatus("connecting", "Connecting...");
+      log(`connecting to ${url}`, "info");
+
+      ws = new WebSocket(url);
+      autoReconnect = true;
+
+      ws.onopen = () => {
+        setStatus("connecting", "Authenticating...");
+        log("connected, sending auth token", "info");
+        ws.send(JSON.stringify({ type: "auth", token }));
+        $("btnConnect").disabled = true;
+        $("btnDisconnect").disabled = false;
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "auth") {
+            if (data.status === "ok") {
+              setStatus("connected", "Connected");
+              log("authenticated successfully", "success");
+            } else {
+              setStatus("disconnected", "Auth Failed");
+              log(`auth failed: ${data.message}`, "error");
+              autoReconnect = false;
+            }
+            return;
+          }
+
+          if (data.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+
+          if (data.type === "error") {
+            log(`server error: ${data.message}`, "error");
+            return;
+          }
+
+          if (data.aggregated_predicted_funding_rate !== undefined) {
+            updateDisplay(data);
+            log(`rate: ${data.aggregated_predicted_funding_rate}`, "success");
+          }
+        } catch {
+          log("failed to parse message", "error");
+        }
+      };
+
+      ws.onclose = (event) => {
+        ws = null;
+        $("btnConnect").disabled = false;
+        $("btnDisconnect").disabled = true;
+
+        if (event.code === 4001) {
+          setStatus("disconnected", "Rejected");
+          log("connection rejected: invalid token", "error");
+          autoReconnect = false;
+          return;
+        }
+
+        if (event.code === 4002) {
+          setStatus("disconnected", "Pong Timeout");
+          log("disconnected: pong timeout", "error");
+          return;
+        }
+
+        setStatus("disconnected", "Disconnected");
+        log("connection closed", "");
+
+        if (autoReconnect) {
+          log("reconnecting in 3s...", "info");
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        log("connection error", "error");
+      };
+    }
+
+    function disconnect() {
+      autoReconnect = false;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      setStatus("disconnected", "Disconnected");
+      $("btnConnect").disabled = false;
+      $("btnDisconnect").disabled = true;
+      log("disconnected manually", "");
+    }
+  </script>
+</body>
+</html>

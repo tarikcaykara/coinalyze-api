@@ -10,8 +10,12 @@ const CONFIG = {
   timeframe: "1 minute",
   cloudflareTimeout: 120000,
   iframeTimeout: 30000,
-  intervalMs: 60 * 1000,
-  sessionRefreshMs: 60 * 60 * 1000,
+  intervalMs: parseInt(process.env.INTERVAL_MS || "60000"),
+  sessionRefreshMs: parseInt(process.env.SESSION_REFRESH_MS || "3600000"),
+  port: parseInt(process.env.PORT || "3000"),
+  authToken: process.env.AUTH_TOKEN || "coinalyze-secret-2025",
+  pingIntervalMs: parseInt(process.env.PING_INTERVAL_MS || "30000"),
+  pongTimeoutMs: parseInt(process.env.PONG_TIMEOUT_MS || "65000"),
 };
 
 const isCloudflareBlocked = async (page) => {
@@ -132,7 +136,7 @@ const getRelevantFrames = (page) => {
   return relevantFrames;
 };
 
-const readAndSave = async (relevantFrames) => {
+const readAndSave = async (relevantFrames, { server, setLastData } = {}) => {
   let predictedValue = null;
 
   for (const frame of relevantFrames) {
@@ -178,8 +182,15 @@ const readAndSave = async (relevantFrames) => {
     timestamp: Date.now(),
   };
 
-  await Bun.write(CONFIG.outputFile, JSON.stringify(result, null, 2));
+  const json = JSON.stringify(result, null, 2);
+  await Bun.write(CONFIG.outputFile, json);
   console.log(`saved to ${CONFIG.outputFile}`);
+
+  if (server) {
+    server.publish("funding-rate", json);
+    if (setLastData) setLastData(json);
+    console.log("broadcast to websocket clients");
+  }
 };
 
 const scrapeOnce = async () => {
@@ -203,9 +214,93 @@ const scrapeOnce = async () => {
   await browser.close();
 };
 
+const createWebSocketServer = () => {
+  const clients = new Map();
+  let lastData = null;
+
+  const server = Bun.serve({
+    port: CONFIG.port,
+    fetch(req, server) {
+      const url = new URL(req.url);
+      if (url.pathname === "/ws") {
+        const upgraded = server.upgrade(req);
+        if (!upgraded) return new Response("Upgrade failed", { status: 400 });
+        return;
+      }
+      return new Response(Bun.file("./test.html"), {
+        headers: { "Content-Type": "text/html" },
+      });
+    },
+    websocket: {
+      open(ws) {
+        clients.set(ws, { authenticated: false, lastPong: Date.now() });
+        console.log("ws: client connected, awaiting auth");
+      },
+      message(ws, message) {
+        try {
+          const data = JSON.parse(message);
+
+          if (data.type === "pong") {
+            const client = clients.get(ws);
+            if (client) client.lastPong = Date.now();
+            return;
+          }
+
+          if (data.type === "auth") {
+            if (data.token === CONFIG.authToken) {
+              const client = clients.get(ws);
+              if (client) client.authenticated = true;
+              ws.subscribe("funding-rate");
+              ws.send(JSON.stringify({ type: "auth", status: "ok" }));
+              if (lastData) ws.send(lastData);
+              console.log("ws: client authenticated");
+            } else {
+              ws.send(
+                JSON.stringify({
+                  type: "auth",
+                  status: "error",
+                  message: "invalid token",
+                }),
+              );
+              ws.close(4001, "invalid token");
+              console.log("ws: client rejected (bad token)");
+            }
+          }
+        } catch {
+          ws.send(JSON.stringify({ type: "error", message: "invalid json" }));
+        }
+      },
+      close(ws) {
+        clients.delete(ws);
+        console.log("ws: client disconnected");
+      },
+    },
+  });
+
+  const pingMsg = JSON.stringify({ type: "ping" });
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ws, client] of clients) {
+      if (now - client.lastPong > CONFIG.pongTimeoutMs) {
+        console.log("ws: closing stale connection (pong timeout)");
+        ws.close(4002, "pong timeout");
+        continue;
+      }
+      if (client.authenticated) {
+        ws.send(pingMsg);
+      }
+    }
+  }, CONFIG.pingIntervalMs);
+
+  console.log(`websocket server listening on ws://localhost:${CONFIG.port}/ws`);
+  return { server, setLastData: (data) => { lastData = data; } };
+};
+
 const runLoop = async () => {
   console.log(`scraper loop started, interval: ${CONFIG.intervalMs / 1000}s`);
 
+  const wsCtx = createWebSocketServer();
   const browser = await chromium.launch({ headless: true });
   let page = await browser.newPage();
   let lastFullLoad = 0;
@@ -221,7 +316,7 @@ const runLoop = async () => {
 
   try {
     let relevantFrames = await fullLoad();
-    await readAndSave(relevantFrames);
+    await readAndSave(relevantFrames, wsCtx);
 
     while (true) {
       console.log(
@@ -248,7 +343,7 @@ const runLoop = async () => {
             if (!passed) {
               console.log("cloudflare timeout, attempting full reload...");
               relevantFrames = await fullLoad();
-              await readAndSave(relevantFrames);
+              await readAndSave(relevantFrames, wsCtx);
               continue;
             }
           }
@@ -258,7 +353,7 @@ const runLoop = async () => {
           relevantFrames = getRelevantFrames(page);
         }
 
-        await readAndSave(relevantFrames);
+        await readAndSave(relevantFrames, wsCtx);
       } catch (error) {
         console.error(`cycle error: ${error.message}, will retry next cycle`);
 
