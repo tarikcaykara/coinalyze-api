@@ -32,9 +32,12 @@ Coinalyze does not expose this aggregated value via their public API, and manual
 ```bash
 git clone https://github.com/tarikcaykara/coinalyze-api.git
 cd coinalyze-api
+cp .env.example .env   # then edit AUTH_TOKEN and any other values
 bun install
 bunx playwright install chromium
 ```
+
+> Bun loads `.env` automatically at runtime, so no `dotenv` package is required. See [Configuration](#configuration) for the full list of environment variables.
 
 ## Usage
 
