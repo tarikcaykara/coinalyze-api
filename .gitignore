@@ -36,7 +36,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Cursor IDE artifacts
 .cursor/
 
-# Personal Claude conversation log
-CLAUDE.md
-
 funding_rate.json
