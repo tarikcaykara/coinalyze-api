@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    image: coinalyze-api
+    env_file: .env
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    shm_size: "1gb"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
