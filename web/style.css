@@ -175,12 +175,52 @@ button {
   border-radius: 2px;
 }
 
-.swatch-api-avg { background: #3b82f6; }
-.swatch-api-oi { background: #a855f7; }
-.swatch-chart { background: #f59e0b; }
+.swatch-avg { background: #3b82f6; }
+.swatch-oi { background: #a855f7; }
 
 .chart {
-  height: 380px;
+  height: 340px;
+}
+
+.panel-title {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.venues {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.venues th,
+.venues td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.venues th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.venues .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.venues tr.excluded td {
+  color: var(--muted);
 }
 
 footer {

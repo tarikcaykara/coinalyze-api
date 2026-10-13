@@ -1,8 +1,8 @@
-import type { Page } from "playwright";
-import { chartUrl, type CoinSymbol } from "../../coins.ts";
-import { createLogger } from "../../log.ts";
+import type { Frame, Page } from "playwright";
+import { chartUrl, type CoinSymbol } from "../../src/coins.ts";
+import { createLogger } from "../../src/log.ts";
 import type { BrowserLike } from "./browser.ts";
-import { classifyCloudflare, parseLegendValue, type CloudflareState } from "./parse.ts";
+import { classifyCloudflare, parseLegendValue, parsePercent, type CloudflareState } from "./parse.ts";
 
 const log = createLogger("chart");
 
@@ -11,6 +11,15 @@ const BLOB_PREFIX = "blob:https://coinalyze.net";
 const CLOUDFLARE_TIMEOUT_MS = 120000;
 const IFRAME_TIMEOUT_MS = 30000;
 const POLL_MS = 2000;
+
+const isChartFrame = (f: Frame) => f.url().startsWith(BLOB_PREFIX);
+
+/** One stablecoin-margined box of the page's "Current / Predicted" table, % per 8h. */
+export interface PageVenue {
+  label: string;
+  current: number | null;
+  predicted: number | null;
+}
 
 /** One Coinalyze funding-rate page for one coin, kept on the 1-minute timeframe. */
 export class ChartPage {
@@ -59,7 +68,7 @@ export class ChartPage {
   async read(): Promise<number> {
     const page = this.page;
     if (page !== null) {
-      const frames = [...page.frames().filter((f) => f.url().startsWith(BLOB_PREFIX)), page.mainFrame()];
+      const frames = [...page.frames().filter(isChartFrame), page.mainFrame()];
       for (const frame of frames) {
         try {
           const value = parseLegendValue(await frame.evaluate(() => document.body?.innerText ?? ""));
@@ -70,6 +79,22 @@ export class ChartPage {
       }
     }
     throw new Error("legend value not found");
+  }
+
+  /** The stablecoin-margined "Current / Predicted" boxes on the page (coin-margined boxes carry `.coin-m`). */
+  async readVenueTable(): Promise<PageVenue[]> {
+    if (this.page === null) throw new Error("page not loaded");
+    const boxes = await this.page.evaluate(() =>
+      [...document.querySelectorAll("table.funding-rates div.box:not(.coin-m):not(.fr-type)")].map((box) => ({
+        label: (box.querySelector(".box-title") as HTMLElement | null)?.innerText ?? "",
+        rows: [...box.querySelectorAll(".box-row")].map((row) => (row as HTMLElement).innerText),
+      })),
+    );
+    return boxes.map((b) => ({
+      label: b.label.replace(/\s+/g, " ").trim().toUpperCase(),
+      current: parsePercent(b.rows[0] ?? ""),
+      predicted: parsePercent(b.rows[1] ?? ""),
+    }));
   }
 
   async invalidate(): Promise<void> {
@@ -103,7 +128,7 @@ export class ChartPage {
 
   private async waitForBlobFrame(page: Page): Promise<void> {
     const deadline = Date.now() + IFRAME_TIMEOUT_MS;
-    while (!page.frames().some((f) => f.url().startsWith(BLOB_PREFIX))) {
+    while (!page.frames().some(isChartFrame)) {
       if (Date.now() >= deadline) {
         throw new Error(`chart iframe not loaded within ${IFRAME_TIMEOUT_MS / 1000}s`);
       }
@@ -118,7 +143,7 @@ export class ChartPage {
   private async selectOneMinute(page: Page): Promise<void> {
     const frames = page
       .frames()
-      .filter((f) => f.url().startsWith(BLOB_PREFIX) || f.url().includes(this.url));
+      .filter((f) => isChartFrame(f) || f.url().includes(this.url));
     let selected = 0;
     for (const frame of frames) {
       try {

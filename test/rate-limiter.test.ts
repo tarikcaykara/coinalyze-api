@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { RateLimiter } from "../src/sources/api/rate-limiter.ts";
+import { RateLimiter } from "../src/coinalyze/rate-limiter.ts";
 
 const fakeClock = () => {
   const clock = { t: 0, slept: 0 };

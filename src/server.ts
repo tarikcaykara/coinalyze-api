@@ -3,12 +3,10 @@ import { timingSafeEqual } from "node:crypto";
 import type { CoinSymbol } from "./coins.ts";
 import type { Health } from "./health.ts";
 import { createLogger } from "./log.ts";
+import { CHANNEL, CLOSE, type ServerMessage } from "./protocol.ts";
 import type { SnapshotStore } from "./store.ts";
-import type { SourceName } from "./types.ts";
 
 const log = createLogger("server");
-
-const CHANNEL = "funding-rate";
 
 interface ClientData {
   authenticated: boolean;
@@ -22,13 +20,9 @@ export interface ServerOptions {
   authTimeoutMs: number;
   pingIntervalMs: number;
   pongTimeoutMs: number;
-  store: Pick<SnapshotStore, "history" | "subscribe">;
+  store: Pick<SnapshotStore, "history" | "latest" | "subscribe">;
   getHealth: () => Health;
-  meta: {
-    coins: CoinSymbol[];
-    sources: SourceName[];
-    intervalMs: Partial<Record<SourceName, number>>;
-  };
+  meta: { coins: CoinSymbol[]; intervalMs: number };
   dashboard: HTMLBundle | Response;
 }
 
@@ -44,12 +38,9 @@ const tokenMatches = (candidate: unknown, expected: string): boolean => {
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
-/**
- * Close codes: 4001 invalid token, 4002 pong timeout, 4003 no auth within authTimeoutMs.
- */
 export const createServer = (opts: ServerOptions): AppServer => {
   const clients = new Set<ServerWebSocket<ClientData>>();
-  const send = (ws: ServerWebSocket<ClientData>, msg: object) => ws.send(JSON.stringify(msg));
+  const send = (ws: ServerWebSocket<ClientData>, msg: ServerMessage) => ws.send(JSON.stringify(msg));
 
   const server = Bun.serve({
     port: opts.port,
@@ -71,7 +62,7 @@ export const createServer = (opts: ServerOptions): AppServer => {
     websocket: {
       data: {} as ClientData,
       open(ws) {
-        ws.data.authTimer = setTimeout(() => ws.close(4003, "auth timeout"), opts.authTimeoutMs);
+        ws.data.authTimer = setTimeout(() => ws.close(CLOSE.authTimeout, "auth timeout"), opts.authTimeoutMs);
         clients.add(ws);
       },
       message(ws, raw) {
@@ -86,7 +77,7 @@ export const createServer = (opts: ServerOptions): AppServer => {
           if (!tokenMatches(msg.token, opts.authToken)) {
             log.warn("ws: client rejected (invalid token)");
             send(ws, { type: "auth", status: "error", message: "invalid token" });
-            ws.close(4001, "invalid token");
+            ws.close(CLOSE.invalidToken, "invalid token");
             return;
           }
           clearTimeout(ws.data.authTimer);
@@ -94,14 +85,8 @@ export const createServer = (opts: ServerOptions): AppServer => {
           ws.data.authenticated = true;
           ws.data.lastPong = Date.now();
           ws.subscribe(CHANNEL);
-          send(ws, {
-            type: "auth",
-            status: "ok",
-            coins: opts.meta.coins,
-            sources: opts.meta.sources,
-            interval_ms: opts.meta.intervalMs,
-          });
-          send(ws, { type: "history", snapshots: opts.store.history() });
+          send(ws, { type: "auth", status: "ok", coins: opts.meta.coins, interval_ms: opts.meta.intervalMs });
+          send(ws, { type: "history", points: opts.store.history(), latest: opts.store.latest() });
           log.info(`ws: client authenticated (${clients.size} connected)`);
           return;
         }
@@ -123,7 +108,7 @@ export const createServer = (opts: ServerOptions): AppServer => {
     for (const ws of clients) {
       if (!ws.data.authenticated) continue;
       if (now - ws.data.lastPong > opts.pongTimeoutMs) {
-        ws.close(4002, "pong timeout");
+        ws.close(CLOSE.pongTimeout, "pong timeout");
         continue;
       }
       send(ws, { type: "ping" });

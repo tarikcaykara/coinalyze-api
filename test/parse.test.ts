@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { classifyCloudflare, parseLegendValue } from "../src/sources/chart/parse.ts";
+import { classifyCloudflare, parseLegendValue, parsePercent } from "../scripts/calibrate/parse.ts";
+
+test("parses funding table cells, including Unicode minus and n/a", () => {
+  expect(parsePercent("+0.0094%")).toBe(0.0094);
+  expect(parsePercent("\u22120.0016%")).toBe(-0.0016);
+  expect(parsePercent("n/a")).toBeNull();
+});
 
 test("parses a Unicode-minus legend value", () => {
   expect(parseLegendValue("Predicted Funding Rate\nAggregated\nAVG close 10 \u22120.0123")).toBe(-0.0123);

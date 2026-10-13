@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { CoinalyzeClient } from "../src/sources/api/client.ts";
+import { CoinalyzeClient } from "../src/coinalyze/client.ts";
 
 interface Seen {
   path: string;

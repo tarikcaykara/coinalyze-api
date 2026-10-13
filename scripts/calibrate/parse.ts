@@ -8,6 +8,12 @@ export const parseLegendValue = (text: string): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
+/** Parses a funding-table cell such as "+0.0094%", "−0.0016%" or "n/a". */
+export const parsePercent = (text: string): number | null => {
+  const match = /^\s*([+\u2212-]?\d+(?:\.\d+)?)\s*%\s*$/.exec(text);
+  return match?.[1] === undefined ? null : Number(match[1].replace(/\u2212/g, "-"));
+};
+
 export type CloudflareState = "none" | "challenge" | "blocked";
 
 export const classifyCloudflare = (title: string, bodyText: string): CloudflareState => {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BrowserManager, type BrowserLike } from "../src/sources/chart/browser.ts";
+import { BrowserManager, type BrowserLike } from "../scripts/calibrate/browser.ts";
 
 const fakeLauncher = () => {
   const instances: { closes: number; connected: boolean }[] = [];

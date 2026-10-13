@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { aggregate } from "../src/sources/api/aggregate.ts";
+import { aggregate } from "../src/funding/aggregate.ts";
 
 test("simple and OI-weighted averages", () => {
   const r = aggregate([

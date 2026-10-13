@@ -21,6 +21,12 @@ export interface ValuePoint {
   update: number;
 }
 
+export interface CandleSeries {
+  symbol: string;
+  /** `t` is the bar's open time in UNIX seconds; `c` its close. */
+  history: { t: number; o: number; h: number; l: number; c: number }[];
+}
+
 export class CoinalyzeApiError extends Error {
   override name = "CoinalyzeApiError";
 }
@@ -71,17 +77,22 @@ export class CoinalyzeClient {
     return this.perSymbol("/open-interest", symbols, { convert_to_usd: "true" });
   }
 
+  /** 1-minute OHLC of the predicted rate; `from`/`to` are UNIX seconds (inclusive). */
+  predictedFundingRateHistory(symbols: string[], from: number, to: number): Promise<CandleSeries[]> {
+    return this.perSymbol("/predicted-funding-rate-history", symbols, {
+      interval: "1min",
+      from: String(from),
+      to: String(to),
+    });
+  }
+
   /** Each symbol costs one API call; at most 20 symbols fit in one request. */
-  private async perSymbol(
-    path: string,
-    symbols: string[],
-    params: Record<string, string>,
-  ): Promise<ValuePoint[]> {
-    const results: ValuePoint[] = [];
+  private async perSymbol<T>(path: string, symbols: string[], params: Record<string, string>): Promise<T[]> {
+    const results: T[] = [];
     for (let i = 0; i < symbols.length; i += MAX_SYMBOLS_PER_REQUEST) {
       const chunk = symbols.slice(i, i + MAX_SYMBOLS_PER_REQUEST);
       await this.limiter.acquire(chunk.length);
-      results.push(...(await this.request<ValuePoint[]>(path, { symbols: chunk.join(","), ...params })));
+      results.push(...(await this.request<T[]>(path, { symbols: chunk.join(","), ...params })));
     }
     return results;
   }

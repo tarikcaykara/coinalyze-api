@@ -1,25 +1,30 @@
 import { COIN_REGISTRY, isCoinSymbol, type CoinSymbol } from "./coins.ts";
-import { isSourceName, type SourceName } from "./types.ts";
 
 export class ConfigError extends Error {
   override name = "ConfigError";
 }
 
-export interface Config {
-  mode: "loop" | "once";
-  port: number;
-  authToken: string | null;
-  coinalyzeApiKey: string | null;
-  sources: SourceName[];
+interface BaseConfig {
+  coinalyzeApiKey: string;
   coins: CoinSymbol[];
-  apiIntervalMs: number;
-  chartIntervalMs: number;
-  sessionRefreshMs: number;
+  intervalMs: number;
+  dataFile: string;
+}
+
+export interface OnceConfig extends BaseConfig {
+  mode: "once";
+}
+
+export interface LoopConfig extends BaseConfig {
+  mode: "loop";
+  port: number;
+  authToken: string;
   pingIntervalMs: number;
   pongTimeoutMs: number;
   authTimeoutMs: number;
-  dataFile: "./funding_rate.json";
 }
+
+export type Config = OnceConfig | LoopConfig;
 
 type Env = Record<string, string | undefined>;
 
@@ -33,18 +38,13 @@ const positiveInt = (env: Env, name: string, fallback: number): number => {
   return value;
 };
 
-// "".split(",") yields [""], so an empty list fails the membership check below.
-const parseSources = (raw: string): SourceName[] => {
-  const sources: SourceName[] = [];
-  for (const value of new Set(raw.split(",").map((s) => s.trim().toLowerCase()))) {
-    if (!isSourceName(value)) {
-      throw new ConfigError(`Invalid SOURCES entry "${value}" (supported: api, chart)`);
-    }
-    sources.push(value);
-  }
-  return sources;
+const required = (env: Env, name: string, why = ""): string => {
+  const value = env[name]?.trim();
+  if (!value) throw new ConfigError(`Missing required env var ${name}${why}`);
+  return value;
 };
 
+// "".split(",") yields [""], so an empty list fails the membership check below.
 const parseCoins = (raw: string): CoinSymbol[] => {
   const coins: CoinSymbol[] = [];
   for (const value of new Set(raw.split(",").map((s) => s.trim().toUpperCase()))) {
@@ -58,39 +58,20 @@ const parseCoins = (raw: string): CoinSymbol[] => {
 };
 
 export const loadConfig = (env: Env, argv: string[]): Config => {
-  if (env.INTERVAL_MS !== undefined) {
-    throw new ConfigError("INTERVAL_MS was replaced by API_INTERVAL_MS and CHART_INTERVAL_MS");
-  }
-
-  const mode = argv.includes("--once") ? "once" : "loop";
-  const sources = parseSources(env.SOURCES ?? "api,chart");
-  const coins = parseCoins(env.COINS ?? "BTC,ETH,SOL");
-
-  const authToken = env.AUTH_TOKEN?.trim() || null;
-  if (mode === "loop" && authToken === null) {
-    throw new ConfigError("Missing required env var AUTH_TOKEN");
-  }
-
-  const coinalyzeApiKey = env.COINALYZE_API_KEY?.trim() || null;
-  if (sources.includes("api") && coinalyzeApiKey === null) {
-    throw new ConfigError(
-      "Missing required env var COINALYZE_API_KEY (required when SOURCES includes api)",
-    );
-  }
-
+  const base: BaseConfig = {
+    coinalyzeApiKey: required(env, "COINALYZE_API_KEY"),
+    coins: parseCoins(env.COINS ?? "BTC,ETH,SOL"),
+    intervalMs: positiveInt(env, "INTERVAL_MS", 60000),
+    dataFile: env.DATA_FILE?.trim() || "./funding_rate.json",
+  };
+  if (argv.includes("--once")) return { ...base, mode: "once" };
   return {
-    mode,
+    ...base,
+    mode: "loop",
     port: positiveInt(env, "PORT", 3000),
-    authToken,
-    coinalyzeApiKey,
-    sources,
-    coins,
-    apiIntervalMs: positiveInt(env, "API_INTERVAL_MS", 120000),
-    chartIntervalMs: positiveInt(env, "CHART_INTERVAL_MS", 60000),
-    sessionRefreshMs: positiveInt(env, "SESSION_REFRESH_MS", 3600000),
+    authToken: required(env, "AUTH_TOKEN", " (required in loop mode)"),
     pingIntervalMs: positiveInt(env, "PING_INTERVAL_MS", 30000),
     pongTimeoutMs: positiveInt(env, "PONG_TIMEOUT_MS", 65000),
     authTimeoutMs: positiveInt(env, "AUTH_TIMEOUT_MS", 10000),
-    dataFile: "./funding_rate.json",
   };
 };

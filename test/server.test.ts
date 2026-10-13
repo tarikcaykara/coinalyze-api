@@ -12,20 +12,23 @@ const store = new SnapshotStore({ file: join(dir, "funding_rate.json"), historyL
 
 const snap = (timestamp: number): Snapshot => ({
   type: "snapshot",
-  source: "api",
   symbol: "ETH",
   coin: "ethereum",
   timestamp,
   aggregated_predicted_funding_rate: 0.01,
   oi_weighted_predicted_funding_rate: 0.012,
-  markets: 12,
+  markets: 7,
   unit: "percent_per_8h",
+  components: [],
 });
 
 const seeded = snap(1);
 await store.add([seeded]);
 
-let health: Health = { httpStatus: 503, body: { status: "down", uptime_s: 0, sources: {} } };
+let health: Health = {
+  httpStatus: 503,
+  body: { status: "down", uptime_s: 0, interval_ms: 60000, last_success_at: null, consecutive_failures: 3, last_error: "x" },
+};
 
 const server = createServer({
   port: 0,
@@ -36,7 +39,7 @@ const server = createServer({
   pongTimeoutMs: 120000,
   store,
   getHealth: () => health,
-  meta: { coins: ["ETH"], sources: ["api"], intervalMs: { api: 120000 } },
+  meta: { coins: ["ETH"], intervalMs: 60000 },
   dashboard: new Response("dashboard"),
 });
 
@@ -63,7 +66,7 @@ const connect = () => {
       queue.push(msg);
     }
   };
-  const next = (): Promise<any> => {
+  const next = (): Promise<unknown> => {
     if (queue.length > 0) return Promise.resolve(queue.shift());
     const { promise, resolve } = Promise.withResolvers<unknown>();
     waiting = resolve;
@@ -72,19 +75,14 @@ const connect = () => {
   return { ws, opened: opened.promise, closed: closed.promise, next };
 };
 
-test("valid auth receives metadata, history, then live snapshots", async () => {
+test("valid auth receives metadata, history with the latest breakdown, then live snapshots", async () => {
   const client = connect();
   await client.opened;
   client.ws.send(JSON.stringify({ type: "auth", token: "secret-token" }));
 
-  expect(await client.next()).toEqual({
-    type: "auth",
-    status: "ok",
-    coins: ["ETH"],
-    sources: ["api"],
-    interval_ms: { api: 120000 },
-  });
-  expect(await client.next()).toEqual({ type: "history", snapshots: [seeded] });
+  expect(await client.next()).toEqual({ type: "auth", status: "ok", coins: ["ETH"], interval_ms: 60000 });
+  const { components: _, ...seededPoint } = seeded;
+  expect(await client.next()).toEqual({ type: "history", points: [seededPoint], latest: [seeded] });
 
   const live = snap(2);
   await store.add([live]);
@@ -113,8 +111,8 @@ test("a client that never authenticates is closed with 4003", async () => {
 test("/health returns the computed status code and body", async () => {
   const res = await fetch(`http://127.0.0.1:${server.port}/health`);
   expect(res.status).toBe(503);
-  expect((await res.json()).status).toBe("down");
+  expect(await res.json()).toMatchObject({ status: "down", consecutive_failures: 3 });
 
-  health = { httpStatus: 200, body: { status: "ok", uptime_s: 5, sources: {} } };
+  health = { httpStatus: 200, body: { ...health.body, status: "ok", consecutive_failures: 0 } };
   expect((await fetch(`http://127.0.0.1:${server.port}/health`)).status).toBe(200);
 });

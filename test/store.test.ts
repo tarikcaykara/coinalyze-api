@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SnapshotStore } from "../src/store.ts";
+import type { CoinSymbol } from "../src/coins.ts";
 import type { Snapshot } from "../src/types.ts";
 
 let dir: string;
@@ -17,16 +18,27 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const snap = (source: "api" | "chart", timestamp: number, rate = 0.01): Snapshot => ({
+const snap = (symbol: CoinSymbol, timestamp: number, rate = 0.01): Snapshot => ({
   type: "snapshot",
-  source,
-  symbol: "ETH",
-  coin: "ethereum",
+  symbol,
+  coin: symbol === "ETH" ? "ethereum" : "bitcoin",
   timestamp,
   aggregated_predicted_funding_rate: rate,
   oi_weighted_predicted_funding_rate: null,
-  markets: null,
+  markets: 1,
   unit: "percent_per_8h",
+  components: [
+    {
+      venue: "BINANCE USDT",
+      symbol: `${symbol}USDT_PERP.A`,
+      predicted_rate: rate,
+      rate_period_hours: 8,
+      rate_8h: rate,
+      oi_usd: null,
+      updated_at: timestamp,
+      status: "used",
+    },
+  ],
 });
 
 test("a corrupt or v1-format file starts empty", async () => {
@@ -41,30 +53,29 @@ test("a corrupt or v1-format file starts empty", async () => {
   expect(v1.latest()).toEqual([]);
 });
 
-test("history is capped per (source, symbol) key and merged ascending", async () => {
+test("history is capped per coin, merged ascending, and drops the per-market breakdown", async () => {
   const store = new SnapshotStore({ file, historyLimit: 2 });
-  await store.add([snap("api", 1), snap("api", 3), snap("chart", 2)]);
-  await store.add([snap("api", 5)]);
-  expect(store.history().map((s) => `${s.source}@${s.timestamp}`)).toEqual([
-    "chart@2",
-    "api@3",
-    "api@5",
-  ]);
+  await store.add([snap("ETH", 1), snap("ETH", 3), snap("BTC", 2)]);
+  await store.add([snap("ETH", 5)]);
+  const history = store.history();
+  expect(history.map((p) => `${p.symbol}@${p.timestamp}`)).toEqual(["BTC@2", "ETH@3", "ETH@5"]);
+  expect(history.every((p) => !("components" in p))).toBe(true);
+  expect(store.latest().find((s) => s.symbol === "ETH")!.components).toHaveLength(1);
 });
 
 test("latest() is persisted and re-seeded by load(), skipping invalid entries", async () => {
   const store = new SnapshotStore({ file, historyLimit: 10 });
   const received: Snapshot[] = [];
   store.subscribe((s) => received.push(s));
-  await store.add([snap("api", 1, 0.02), snap("chart", 2, 0.03)]);
+  await store.add([snap("ETH", 1, 0.02), snap("BTC", 2, 0.03)]);
   expect(received.map((s) => s.timestamp)).toEqual([1, 2]);
 
   const persisted = JSON.parse(await Bun.file(file).text());
   expect(persisted).toEqual(store.latest());
 
-  await Bun.write(file, JSON.stringify([...persisted, { ...snap("api", 3), symbol: "DOGE" }]));
+  await Bun.write(file, JSON.stringify([...persisted, { ...snap("ETH", 3), symbol: "DOGE" }]));
   const reloaded = new SnapshotStore({ file, historyLimit: 10 });
   await reloaded.load();
   expect(reloaded.latest()).toEqual(store.latest());
-  expect(reloaded.history()).toEqual(store.latest());
+  expect(reloaded.history().map((p) => p.timestamp)).toEqual([1, 2]);
 });

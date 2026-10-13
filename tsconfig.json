@@ -15,5 +15,5 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["bun"]
   },
-  "include": ["src", "web", "test"]
+  "include": ["src", "web", "test", "scripts"]
 }

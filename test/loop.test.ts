@@ -4,7 +4,6 @@ import type { Snapshot, Source, SourceStatus } from "../src/types.ts";
 
 const snapshot: Snapshot = {
   type: "snapshot",
-  source: "api",
   symbol: "ETH",
   coin: "ethereum",
   timestamp: 1,
@@ -12,12 +11,12 @@ const snapshot: Snapshot = {
   oi_weighted_predicted_funding_rate: null,
   markets: 3,
   unit: "percent_per_8h",
+  components: [],
 };
 
 test("failures (including the first poll) are retried until a success resets the counter", async () => {
   const controller = new AbortController();
   const status: SourceStatus = {
-    name: "api",
     intervalMs: 1000,
     lastSuccessAt: null,
     consecutiveFailures: 0,
@@ -27,7 +26,7 @@ test("failures (including the first poll) are retried until a success resets the
   let polls = 0;
   let clock = 0;
   const source: Source = {
-    name: "api",
+    name: "funding",
     intervalMs: 1000,
     poll: async () => {
       polls++;
@@ -35,7 +34,6 @@ test("failures (including the first poll) are retried until a success resets the
       if (polls <= 2) throw new Error(`boom ${polls}`);
       return [snapshot];
     },
-    close: async () => {},
   };
   const added: Snapshot[][] = [];
   const sleeps: number[] = [];
