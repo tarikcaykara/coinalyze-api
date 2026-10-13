@@ -22,6 +22,8 @@ try {
 }
 
 const store = new SnapshotStore({ file: config.dataFile, historyLimit: 720 });
+// Aborted on SIGINT/SIGTERM; stops the loops and tells sources to skip recovery.
+const controller = new AbortController();
 
 const sources: Source[] = [];
 if (config.sources.includes("api")) {
@@ -42,6 +44,7 @@ if (config.sources.includes("chart")) {
       coins: config.coins,
       intervalMs: config.chartIntervalMs,
       sessionRefreshMs: config.sessionRefreshMs,
+      signal: controller.signal,
     }),
   );
 }
@@ -94,7 +97,6 @@ log.info(
   `listening on http://localhost:${server.port} (sources: ${config.sources.join(",")}; coins: ${config.coins.join(",")})`,
 );
 
-const controller = new AbortController();
 const loops = sources.map((s, i) => runSourceLoop(s, store, statuses[i]!, controller.signal));
 
 let shuttingDown = false;

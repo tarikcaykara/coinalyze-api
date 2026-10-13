@@ -13,7 +13,11 @@ export class BrowserManager {
   private browser: BrowserLike | null = null;
 
   constructor(opts: { launch?: () => Promise<BrowserLike> } = {}) {
-    this.launch = opts.launch ?? (() => chromium.launch({ headless: true }));
+    // Signal handling belongs to main.ts. Playwright's defaults close the browser on SIGINT/SIGTERM and
+    // exit(130) on SIGINT, racing the graceful shutdown; its exit hook still kills Chromium as a last resort.
+    this.launch =
+      opts.launch ??
+      (() => chromium.launch({ headless: true, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false }));
   }
 
   async get(): Promise<BrowserLike> {
