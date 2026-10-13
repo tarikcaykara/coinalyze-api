@@ -1,14 +1,21 @@
 {
-  "name": "coinalyze-scraper",
+  "name": "coinalyze-api",
   "private": true,
   "scripts": {
-    "scrape": "bun run scraper.js",
-    "start": "bun run scraper.js --loop"
+    "start": "bun run src/main.ts",
+    "once": "bun run src/main.ts --once",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "type": "module",
   "dependencies": {
-    "playwright": "^1.58.2",
+    "lightweight-charts": "^5.2.1",
+    "playwright": "^1.64.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2"
   }
 }
