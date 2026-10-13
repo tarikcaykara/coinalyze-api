@@ -1,4 +1,4 @@
-import type { Frame, Page } from "playwright";
+import type { Page } from "playwright";
 import { chartUrl, type CoinSymbol } from "../../coins.ts";
 import { createLogger } from "../../log.ts";
 import type { BrowserLike } from "./browser.ts";
@@ -51,7 +51,7 @@ export class ChartPage {
     await this.passCloudflare(page);
     await this.waitForBlobFrame(page);
     await page.waitForTimeout(3000);
-    // A reload resets the chart to its default timeframe.
+    // A reload can reset the chart to its default timeframe (1 hour).
     await this.selectOneMinute(page);
     await page.waitForTimeout(10000);
   }
@@ -111,27 +111,42 @@ export class ChartPage {
     }
   }
 
+  /**
+   * The interval toolbar is a single dropdown whose trigger is labelled with the current interval.
+   * Open it and pick the "1 minute" item (data-value="1"; never "1M" = month or "15").
+   */
   private async selectOneMinute(page: Page): Promise<void> {
     const frames = page
       .frames()
-      .filter((f: Frame) => f.url().startsWith(BLOB_PREFIX) || f.url().includes(this.url));
-    let clicked = 0;
+      .filter((f) => f.url().startsWith(BLOB_PREFIX) || f.url().includes(this.url));
+    let selected = 0;
     for (const frame of frames) {
       try {
-        let button = frame.locator('button[aria-label="1 minute"]').first();
-        if ((await button.count()) === 0) {
-          // Exact, case-sensitive: must not match "1M" (month) or "15m".
-          button = frame.locator("button", { hasText: /^\s*1m\s*$/ }).first();
-          if ((await button.count()) === 0) continue;
+        const trigger = frame.locator("#header-toolbar-intervals button").filter({ visible: true }).first();
+        if ((await trigger.count()) === 0) continue;
+        if ((await trigger.getAttribute("aria-label")) !== "1 minute") {
+          await trigger.click({ timeout: 3000 });
+          const item = frame
+            .locator('[data-value="1"]')
+            .filter({ visible: true, hasText: /^\s*1 minute\s*$/ })
+            .first();
+          await item.waitFor({ state: "visible", timeout: 10000 });
+          await item.click({ timeout: 3000 });
+          await frame.waitForFunction(
+            () =>
+              [...document.querySelectorAll("#header-toolbar-intervals button")].some(
+                (b) => (b as HTMLElement).offsetParent !== null && b.getAttribute("aria-label") === "1 minute",
+              ),
+            undefined,
+            { timeout: 10000 },
+          );
         }
-        await button.waitFor({ state: "visible", timeout: 10000 });
-        await button.click({ timeout: 3000 });
-        clicked++;
+        selected++;
       } catch {
-        // Frame detached or button not interactable; try the next frame.
+        // Frame detached or dropdown not interactable; try the next frame.
       }
     }
-    if (clicked === 0) throw new Error("could not select 1 minute timeframe");
-    log.info(`${this.symbol}: selected 1 minute timeframe in ${clicked} frame(s)`);
+    if (selected === 0) throw new Error("could not select 1 minute timeframe");
+    log.info(`${this.symbol}: 1 minute timeframe selected in ${selected} frame(s)`);
   }
 }
