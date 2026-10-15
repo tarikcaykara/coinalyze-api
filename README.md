@@ -94,6 +94,31 @@ bunx playwright install chromium   # once
 COINALYZE_API_KEY=… bun run calibrate --samples 60 --gap-s 60   # ≈ 1 hour; Ctrl-C stops early and still reports
 ```
 
+### Results (2026-10-14 21:11–21:53 UTC, 40 samples)
+
+For BTC, ETH and SOL, the page showed exactly the ten venues in `VENUES`.
+
+| Venue | Expected page ÷ API | BTC | ETH | SOL | Check |
+|---|---|---|---|---|---|
+| BINANCE USDC | 1 | 0.998 | 0.994 | 1.030 | ok |
+| BINANCE USDT | 1 | 0.999 | 1.001 | 0.990 | ok |
+| BYBIT USDC | 1 | 1.000 | 0.999 | 0.998 | ok |
+| BYBIT USDT | 1 | 0.998 | 0.990 | 1.001 | ok |
+| DERIBIT | 1 | — | — | — | no data |
+| HUOBI | 1 | — | — | — | no data |
+| HYPERLIQUID | 8 | 8.000 | 8.170 | 7.643 | ok |
+| KRAKEN | 8 | 7.995 | 8.006 | 8.008 | ok |
+| OKX | 1 | — | — | — | no data |
+| WOO X | 1 | 0.999 | 1.002 | 0.991 | ok |
+
+| Coin | Mean chart (% per 8h) | API AVG vs chart, lag 0 (MAD) | API history: best lag · MAD | 10-min SMA: best lag · MAD |
+|---|---|---|---|---|
+| BTC | 0.00576% | 0.00291 pp (50.5%) | 81 min · 0.00175 pp (30.3%) | 78 min · 0.00176 pp (30.5%) |
+| ETH | 0.00437% | 0.00101 pp (23.0%) | 165 min · 0.00025 pp (5.6%) | 161 min · 0.00032 pp (7.4%) |
+| SOL | -0.00039% | 0.00358 pp (912.0%) | 166 min · 0.00022 pp (55.1%) | 161 min · 0.00050 pp (128.4%) |
+
+Every venue with an API rate lands within 5% of its expected ratio, so the 8h factors hold. Deribit, Huobi and OKX have no predicted rate in the API and show as `no_rate`. For ETH and SOL, the chart matches the API AVG from about 165 minutes earlier (residual MAD 0.00025 pp and 0.00022 pp), and a 10-minute SMA tracks worse. The chart is therefore delayed, not smoothed. BTC tracked poorly in this window (best lag 81 min, MAD 0.00175 pp). SOL's percentages are large because its mean rate is near zero.
+
 ## Quick start
 
 1. **Get a free API key.** Sign in or sign up at [coinalyze.net](https://coinalyze.net), open [coinalyze.net/account/api-key](https://coinalyze.net/account/api-key/) and click **Generate**. Generating a key deactivates the previous one immediately, and the new key only starts working **2 minutes** after it was generated.
