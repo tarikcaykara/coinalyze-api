@@ -99,9 +99,9 @@ Bun auto-loads `.env`. Do NOT use `dotenv`. All parsing happens in `src/config.t
 
 ## Project evolution (for orientation, not documentation)
 
-v1 (single `scraper.js`, chart scraping), oldest-first: `942fd72` initial Playwright scraper → `f47200c` single file → `52a56c0` 1-minute buttons → `858c5f3` headless + stealth → `c6da13b` `--loop` → `19f02fe` WebSocket + Docker.
+v1 (single `scraper.js`, chart scraping; tagged `v1.0.0` on `ae5a441`), oldest-first: `942fd72` initial Playwright scraper → `f47200c` single file → `52a56c0` 1-minute buttons → `858c5f3` headless + stealth → `c6da13b` `--loop` → `19f02fe` WebSocket + Docker.
 
-v2 (`feat/v2-hybrid-rewrite`):
+v2 (PR #12, squash-merged into `master` as `3b9e717` and tagged `v2.0.0`). The hashes below come from the PR branch, not `master`; fetch them with `git fetch origin pull/12/head`.
 - **First pass (hybrid):** API source + live chart source, both runtime (`f23e4cd` … `c713af9`).
 - **Second pass (API-only, `271a953`):**
   - The chart moved to the offline calibration tool.
@@ -121,7 +121,8 @@ Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTER
 - **When behavior changes, update `README.md` in the same commit.** The v1 README drifted badly.
 - **Prefer `Bun.*` APIs** over `node:*` equivalents. See the Bun section below.
 - **Style:** 2-space indent, double quotes, semicolons, arrow functions for top-level helpers. No linter/formatter enforced.
-- **Commits and branches follow Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`, `build:`; branches like `feat/<topic>`).
+- **Commits and branches follow Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`, `build:`, `perf:`; branches like `feat/<topic>`).
+- **PRs are squash-merged into `master`**, one commit per PR titled with the PR title. Release tags go on the squash commit. Reference PR numbers or squash commits in "Project evolution", because branch hashes do not reach `master`.
 
 ---
 
