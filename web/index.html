@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aggregated Predicted Funding Rate · Live</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Aggregated Predicted Funding Rate</h1>
+      <p class="subtitle">Ten stablecoin-margined perpetual venues via the Coinalyze API · % per 8h</p>
+    </div>
+    <span id="status" class="pill disconnected">Disconnected</span>
+  </header>
+
+  <form id="connect" class="connect" autocomplete="off">
+    <input id="token" type="password" placeholder="AUTH_TOKEN" aria-label="Auth token" required>
+    <button type="submit">Connect</button>
+  </form>
+
+  <nav id="tabs" class="tabs" aria-label="Coins"></nav>
+
+  <section class="cards">
+    <article class="card" id="card-avg">
+      <h2>AVG</h2>
+      <div class="value">—</div>
+      <div class="meta"><span class="age"></span><span class="badge" hidden>STALE</span></div>
+    </article>
+    <article class="card" id="card-oi">
+      <h2>OI-weighted</h2>
+      <div class="value">—</div>
+      <div class="meta"><span class="age"></span><span class="badge" hidden>STALE</span></div>
+    </article>
+    <article class="card" id="card-spread">
+      <h2>Spread (OI-w − AVG)</h2>
+      <div class="value">—</div>
+      <div class="meta"><span class="age"></span><span class="badge" hidden>STALE</span></div>
+    </article>
+    <article class="card" id="card-venues">
+      <h2>Venues used</h2>
+      <div class="value">—</div>
+      <div class="meta"><span class="age"></span><span class="badge" hidden>STALE</span></div>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="legend">
+      <span><i class="swatch-avg"></i>AVG</span>
+      <span><i class="swatch-oi"></i>OI-weighted</span>
+    </div>
+    <div id="chart" class="chart"></div>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">Per-venue breakdown</h2>
+    <div class="table-wrap">
+      <table class="venues">
+        <thead>
+          <tr>
+            <th>Venue</th>
+            <th>Symbol</th>
+            <th class="num">Predicted</th>
+            <th class="num">Period</th>
+            <th class="num">Per 8h</th>
+            <th class="num">OI (USD)</th>
+            <th class="num">OI weight</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="venues"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Data source: <a href="https://coinalyze.net" target="_blank" rel="noopener">Coinalyze</a>
+    · Educational project. Not affiliated with Coinalyze.
+  </footer>
+
+  <script type="module" src="./app.ts"></script>
+</body>
+</html>

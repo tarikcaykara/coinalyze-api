@@ -8,110 +8,120 @@ alwaysApply: false
 
 ## What this project is
 
-A scraper + realtime broadcast service that extracts the **Aggregated Predicted Funding Rate (AVG close 10)** for Ethereum from the Coinalyze TradingView chart and rebroadcasts it over WebSocket. The value is NOT exposed by Coinalyze's public API and cannot be recomputed reliably from per-exchange data, so we read it directly from the rendered chart legend.
+A Bun + TypeScript service that publishes the **aggregated predicted funding rate** (BTC, ETH, SOL; % per 8h) over an authenticated WebSocket, with a live dashboard and `/health`.
 
-Primary consumers are internal services that need a stable, server-side-aggregated funding rate signal.
+- **Data:** only the official Coinalyze REST API. The API has no aggregated endpoint, so `FundingSource` aggregates the ten venues coinalyze.net lists on each coin's funding page. It computes a simple AVG and an OI-weighted average, both normalized to 8h, and publishes a per-venue breakdown.
+- **The chart is not in the runtime.** `scripts/calibrate/` is an offline dev tool. It reads the coinalyze.net chart and per-venue table with headless Chromium to verify the venue list and 8h factors, and to measure how the API aggregate tracks the chart.
+
+Primary consumers are internal services that need a stable, explainable funding-rate signal.
 
 ## Architecture at a glance
 
-Single-file application. All logic lives in `scraper.js` (~390 lines). There is intentionally no framework, router, or build step.
-
 ```
-Coinalyze.net
-  → Playwright (Chromium, headless + stealth plugin)
-    → DOM legend text in blob: iframe (TradingView chart)
-      → regex extraction
-        → funding_rate.json  (disk)
-        → Bun.serve() WebSocket "funding-rate" channel  (network)
-          → authenticated clients
+FundingSource ─(INTERVAL_MS)→ runSourceLoop → SnapshotStore ─┬→ funding_rate.json (latest per coin, DATA_FILE)
+                                   │                         ├→ WS channel "funding-rate" → dashboard / clients
+                                   │                         └→ in-memory history (HISTORY_LIMIT points per coin)
+                                   └→ SourceStatus → GET /health
 ```
 
-Two runtime modes, selected by CLI flag:
+Runtime modes:
 
-- **`bun run scrape`** — one-shot. Launch browser → load page → read value → write JSON → exit. Used for manual checks and debugging.
-- **`bun run start`** — production. Adds `--loop`: persistent browser, periodic reload every `INTERVAL_MS`, full re-navigation every `SESSION_REFRESH_MS`, WebSocket broadcast server, multi-level error recovery.
+- **`bun run start`**: loop mode. Serves the dashboard (`GET /`), `/health` and `/ws`.
+- **`bun run once`**: polls once, prints a JSON array to stdout, writes `funding_rate.json`, then exits 0 (or 1 if nothing was produced).
+- **`bun run calibrate`**: the offline calibration tool. Needs `bunx playwright install chromium`; dev dependencies only.
 
-## Key files
+## Module map
 
 | File | Purpose |
-|------|---------|
-| `scraper.js` | Entire application: scraping, loop, WebSocket server, error recovery |
-| `test.html` | Built-in WebSocket client UI, served at `GET /` |
-| `Dockerfile` | Bun base image + Chromium system libs + `bunx playwright install chromium`; `CMD ["bun", "run", "start"]` |
-| `.env.example` | All runtime env vars (see Configuration below) |
-| `package.json` | Only two scripts: `scrape`, `start` |
-| `funding_rate.json` | Last scraped value (overwritten each cycle) |
-| `README.md` | User-facing documentation (keep in sync with `scraper.js` when behavior changes) |
-
-## scraper.js map (by line range)
-
-- `6-19` — `CONFIG` block. All env vars and hardcoded constants. Change defaults here.
-- `21-40` — Cloudflare detection (`isCloudflareBlocked`, `waitUntilUnblocked`).
-- `42-52` — `waitForBlobFrame`: the TradingView chart lives inside a `blob:` iframe; must wait for it explicitly.
-- `54-64` — `readLegendValue`: regex `/Predicted Funding Rate[\s\S]*?AVG close 10\s+([\u2212\-\d.]+)/i`. Handles Unicode minus (U+2212).
-- `66-85` — `loadPage`: navigate → networkidle → Cloudflare check → blob iframe wait.
-- `87-124` — `clickTimeframe`: selects "1 minute". Tries `button[aria-label="1 minute"]` first, falls back to `button:has-text("1m")`. Iterates over all relevant frames.
-- `126-137` — `getRelevantFrames`: filters to `blob:` or target-URL frames.
-- `139-194` — `readAndSave`: extracts, writes JSON, broadcasts over WebSocket if server present.
-- `196-215` — `scrapeOnce`: one-shot mode orchestration.
-- `217-298` — `createWebSocketServer`: `Bun.serve()`, auth, pub/sub on `"funding-rate"` channel, ping/pong keepalive. Close codes: `4001` bad token, `4002` pong timeout.
-- `300-382` — `runLoop`: persistent browser, `SESSION_REFRESH_MS` full-load logic, three-tier error recovery (reload → full load → browser reopen).
-- `384-390` — `--loop` flag dispatch.
+|---|---|
+| `src/main.ts` | Entry: config → store → source → loop → server; `--once`; SIGINT/SIGTERM shutdown. **Only owner of `process.exit`** in the service and of the static `web/index.html` import. |
+| `src/config.ts` | `loadConfig(env, argv)` → `LoopConfig \| OnceConfig` (discriminated by `mode`); throws `ConfigError`. |
+| `src/coins.ts` | `COIN_REGISTRY` (symbol → Coinalyze slug), `chartUrl`. |
+| `src/types.ts` | `Snapshot` (wire = store = file format), `MarketComponent`, `HistoryPoint`, `Source`, `SourceStatus`. |
+| `src/protocol.ts` | WS `ClientMessage`/`ServerMessage`, `CLOSE` codes, `CHANNEL`, `HISTORY_LIMIT`. Shared by `server.ts` and `web/app.ts`. |
+| `src/log.ts` | `createLogger(scope)`: writes to **stderr only** (stdout is reserved for `--once` JSON and the calibration report). |
+| `src/store.ts` | `SnapshotStore`: latest per coin (persisted), history of `HistoryPoint`s, subscribers. |
+| `src/loop.ts` | `runSourceLoop`: drift-free (start-to-start), first poll immediate, never throws/exits; `abortableSleep`. |
+| `src/health.ts` | `computeHealth` (pure): ok if a poll succeeded within 3 intervals (or startup grace), else 503. |
+| `src/server.ts` | `createServer`: `Bun.serve` routes + WS protocol. |
+| `src/coinalyze/client.ts` | `CoinalyzeClient`: `api_key` header, ≤20 symbols per request, 429 `Retry-After` (3 attempts), 401 fails immediately; includes 1-minute history for calibration. |
+| `src/coinalyze/rate-limiter.ts` | Token bucket, 40 tokens, 40/min refill. |
+| `src/funding/universe.ts` | **`VENUES`**: the ten venues (page label, exchange code, quote, `ratePeriodHours`). The single source of methodology truth, together with `STALE_AFTER_MS`. |
+| `src/funding/aggregate.ts` | `aggregate()` (pure AVG + OI-weighted). |
+| `src/funding/source.ts` | `FundingSource`: resolves venues against `/future-markets` (24h cache), OI cache 10 min, staleness filter, components, budget warning. Clock injectable. |
+| `scripts/calibrate/*` | `main.ts` (CLI), `analyze.ts` (pure: venue ratios, lag-aligned MAD, history SMA), `chart-page.ts`, `browser.ts`, `parse.ts`. |
+| `web/index.html`, `web/app.ts`, `web/style.css` | Dashboard: cards, AVG/OI-weighted chart (local time), per-venue table. Bun HTML import, `lightweight-charts` v5. |
+| `test/*.test.ts` | `bun:test`; no network, no browser. |
+| `Dockerfile`, `docker-compose.yml` | Pinned `oven/bun:1.4.3-debian`, production deps only (~240 MB), non-root, healthcheck; compose adds the `data` volume and `init`. |
+| `.github/workflows/ci.yml` | `bun install --frozen-lockfile` → `bun run typecheck` → `bun test`. |
 
 ## Configuration (env vars)
 
-Bun auto-loads `.env`. Do NOT use `dotenv`.
+Bun auto-loads `.env`. Do NOT use `dotenv`. All parsing happens in `src/config.ts`.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PORT` | `3000` | WebSocket + HTTP port |
-| `AUTH_TOKEN` | `coinalyze-secret-2025` | WS clients must send this in `{type:"auth",token}` handshake |
-| `INTERVAL_MS` | `60000` | Scrape cycle delay |
-| `SESSION_REFRESH_MS` | `3600000` | Full re-navigation interval (1h). Between refreshes, cycles use `page.reload()`. |
-| `PING_INTERVAL_MS` | `30000` | WS keepalive ping frequency |
-| `PONG_TIMEOUT_MS` | `65000` | Close client if no pong in this window |
+| `PORT` | `3000` | Loop mode only |
+| `AUTH_TOKEN` | none | Required in loop mode. There is no default token. |
+| `COINALYZE_API_KEY` | none | Always required |
+| `COINS` | `BTC,ETH,SOL` | Must be keys of `COIN_REGISTRY` |
+| `INTERVAL_MS` | `60000` | 3 coins × 10 venues at 60 s ≈ 33 of 40 calls/min |
+| `DATA_FILE` | `./funding_rate.json` | Compose sets `/app/data/funding_rate.json` on a named volume |
+| `PING_INTERVAL_MS` | `30000` | |
+| `PONG_TIMEOUT_MS` | `65000` | |
+| `AUTH_TIMEOUT_MS` | `10000` | |
 
-Hardcoded in `CONFIG` (line 7-11): target URL, output file, coin name, timeframe, Cloudflare timeout (120s), iframe timeout (30s).
+## WebSocket contract
 
-## WebSocket protocol
+- Endpoint `ws://<host>:<PORT>/ws`. Types live in `src/protocol.ts`; change them there and both ends follow.
+- The client sends `{"type":"auth","token"}` within `AUTH_TIMEOUT_MS`. The server replies `{"type":"auth","status":"ok",coins,interval_ms}` and then `{"type":"history",points,latest}`.
+- After that, each `Snapshot` (with `components`) is published on the `"funding-rate"` channel. Consumers filter by `symbol`.
+- Keepalive: server `{"type":"ping"}` → client `{"type":"pong"}`.
+- Close codes: `4001` invalid token, `4002` pong timeout, `4003` auth timeout.
+- `Snapshot` keeps the v1 fields `aggregated_predicted_funding_rate`, `coin` (slug) and `timestamp`. Changing those names breaks v1 consumers.
 
-- Endpoint: `ws://<host>:<PORT>/ws`
-- Test UI: `http://<host>:<PORT>/` (serves `test.html`)
-- Handshake: client sends `{"type":"auth","token":"..."}` → server responds `{"type":"auth","status":"ok"}` and immediately pushes last cached value, OR closes with `4001`.
-- Channel: `"funding-rate"` (Bun `ws.subscribe` / `server.publish`). Payload is the same JSON as `funding_rate.json`.
-- Keepalive: server sends `{"type":"ping"}` every `PING_INTERVAL_MS`; client must reply `{"type":"pong"}` or get closed with `4002`.
+## Non-obvious gotchas (read before changing methodology or the calibration tool)
 
-## Non-obvious gotchas (read before changing scraping logic)
-
-1. **Stealth plugin is load-bearing.** Headless Chromium is detected by Cloudflare unless `puppeteer-extra-plugin-stealth` is active. Don't remove it. Don't "simplify" the `playwright-extra` wrapper.
-2. **Blob iframe is unavoidable.** TradingView renders into a `blob:` URL iframe. You cannot navigate to or directly fetch it; you MUST enumerate `page.frames()` and filter by URL prefix.
-3. **Chart is `<canvas>`, values are in DOM.** The number isn't pixel-read — TradingView exposes legend values as DOM text. If Coinalyze ever changes this, the scraper breaks entirely; there is no pixel fallback.
-4. **Unicode minus.** Negative values come in as U+2212 (`−`), not ASCII hyphen. The regex and `parseFloat` normalization at line 61 handle both — keep them aligned.
-5. **`SESSION_REFRESH_MS` exists for a reason.** Long-lived TradingView sessions drift and eventually show stale data. The 1-hour full re-navigation is a workaround — don't remove it without a replacement.
-6. **Loop mode never exits on error.** Three-tier recovery (reload → full load → browser reopen → retry next cycle). Introducing a `process.exit()` anywhere in `runLoop` would break production uptime.
-7. **No persistence layer.** `funding_rate.json` on disk + `lastData` variable in memory are the entire state. New WS clients get `lastData` immediately on auth (line 255) so they don't wait a full `INTERVAL_MS` for the first value.
-8. **Single coin, single timeframe.** Ethereum + 1-minute are hardcoded in `CONFIG` and in the `clickTimeframe` selectors. Multi-coin support would require non-trivial refactoring.
+1. **`VENUES` mirrors the site, not the API.**
+   - The API lists many more stablecoin perpetuals: Polymarket contracts, ETHBTC/ETHU/USD1 quotes, Lighter, dYdX, and a Coinbase feed that returned a 12-day-old value. Do not widen the venue list to "all STABLE perps".
+   - `bun run calibrate` reports listing drift when the page changes.
+2. **Rate periods are measured.** Hyperliquid (`H`) and Kraken (`K`) report hourly rates (page ÷ API ≈ 8). Deribit, Huobi and OKX have no predicted rate in the API: they are omitted from the response rather than returned as `null`, and show as `no_rate`. Re-run the calibration if Coinalyze changes units.
+3. **API budget: 40 calls/min per key, 1 call per symbol.** Do not run the calibration tool and the service with the same key at the same time; together they exceed the budget and both get 429s.
+4. **API keys activate 2 minutes after generation**, and generating a new key deactivates the old one immediately. A fresh key returning 401 is expected for those 2 minutes.
+5. **Loops never exit.** `runSourceLoop` catches everything and retries next cycle. Never add `process.exit` outside `main.ts` startup/shutdown.
+6. **Calibration tool (`scripts/calibrate/`):**
+   - **Stealth plugin is load-bearing.** Headless Chromium is challenged by Cloudflare unless `puppeteer-extra-plugin-stealth` is active (`browser.ts`). Don't "simplify" the `playwright-extra` wrapper.
+   - **Blob iframe.** TradingView renders into a `blob:https://coinalyze.net…` iframe; enumerate `page.frames()` and filter with `isChartFrame`.
+   - **Interval dropdown.** `#header-toolbar-intervals button` is labelled with the current interval; pick `[data-value="1"]`. The legend value depends on the interval (1h ≠ 1m), so re-select after every reload.
+   - **Unicode minus.** Legend and table values use U+2212; `parseLegendValue`/`parsePercent` normalize it.
+   - **Page table.** The per-venue boxes are `table.funding-rates div.box`. Coin-margined boxes carry `.coin-m`, the header box `.fr-type`, and labels are uppercased by CSS.
+   - **Playwright must not own signals.** `BrowserManager` launches with `handleSIGINT/SIGTERM/SIGHUP: false`; Playwright's defaults close the browser and `exit(130)` on SIGINT.
 
 ## Project evolution (for orientation, not documentation)
 
-Commits on `master`, oldest-first among the relevant ones:
+v1 (single `scraper.js`, chart scraping), oldest-first: `942fd72` initial Playwright scraper → `f47200c` single file → `52a56c0` 1-minute buttons → `858c5f3` headless + stealth → `c6da13b` `--loop` → `19f02fe` WebSocket + Docker.
 
-1. `942fd72` — Initial Playwright scraper, headed mode, one-shot only.
-2. `f47200c` — Consolidated into `scraper.js`, removed a separate `server.js`.
-3. `52a56c0` — Robust 1-minute button selection (no dropdown click).
-4. `858c5f3` — Switched to headless + stealth plugin.
-5. `c6da13b` — Added `--loop` with persistent browser and periodic reload.
-6. `19f02fe` — Added WebSocket broadcast server + Docker deployment.
+v2 (`feat/v2-hybrid-rewrite`):
+- **First pass (hybrid):** API source + live chart source, both runtime (`f23e4cd` … `c713af9`).
+- **Second pass (API-only, `271a953`):**
+  - The chart moved to the offline calibration tool.
+  - The ten-venue list and the staleness filter were added.
+  - Per-venue components went into snapshots and the dashboard.
+  - Shared protocol types and a mode-specific config were introduced.
+  - The Docker image shrank from 1.32 GB to ~240 MB.
+- **Calibration and smoke pass:** measured venue ratios and chart tracking in the README (`5ede760`); README examples and the dashboard screenshot come from real smoke runs.
 
-If you see old patterns (headed mode, dropdown clicking, separate server file) in issues, comments, or external docs — they are historical and do not reflect current code.
+Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
 
 ## Working conventions for this repo
 
-- **Keep `scraper.js` as a single file.** Splitting it into modules has been considered and rejected — the linear top-to-bottom flow is easier to reason about than an artificial module boundary at this size.
-- **When behavior changes, update `README.md` in the same commit.** README drifted badly in the past (see commit history: it still described headed + dropdown mode long after both were removed).
-- **Prefer `Bun.*` APIs** over `node:*` equivalents — see the Bun section below.
-- **No test suite currently.** If adding tests, use `bun test`. Do not introduce Jest/Vitest.
-- **No linter/formatter enforced.** Match existing style (2-space indent, double quotes, semicolons, arrow functions for top-level helpers).
+- **Modular TypeScript under `src/`.** One responsibility per module (see the module map). Keep pure logic (`aggregate`, `parse`, `health`, `config`) free of I/O so it stays unit-testable.
+- **Explicit `.ts` import extensions** (`allowImportingTsExtensions`, `verbatimModuleSyntax`). Use `import type` for type-only imports.
+- **Checks:** `bun test` and `bun run typecheck` must pass; CI runs both. Tests must not touch the network or launch a browser; inject fakes (`fetch`, `sleep`, `now`, `launch`).
+- **When behavior changes, update `README.md` in the same commit.** The v1 README drifted badly.
+- **Prefer `Bun.*` APIs** over `node:*` equivalents. See the Bun section below.
+- **Style:** 2-space indent, double quotes, semicolons, arrow functions for top-level helpers. No linter/formatter enforced.
+- **Commits and branches follow Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`, `build:`; branches like `feat/<topic>`).
 
 ---
 

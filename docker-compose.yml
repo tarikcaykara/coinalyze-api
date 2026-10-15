@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    image: coinalyze-api
+    env_file: .env
+    environment:
+      DATA_FILE: /app/data/funding_rate.json
+    volumes:
+      - data:/app/data
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  data:
