@@ -40,9 +40,9 @@ flowchart LR
 ```
 
 - **One loop.** Intervals are measured start-to-start and the first poll runs immediately. A failed cycle is logged, counted in `/health` and retried on the next cycle; the loop never exits the process.
-- **API budget.** Each symbol in a request costs one call, the limit is 40 calls/min, and a request takes at most 20 symbols. Defaults (3 coins × 10 venues at 60 s, open interest refreshed every 10 min) come to about 33 calls/min. A token bucket enforces the limit. On a 429 the client waits for `Retry-After` and logs the wait as a warning.
-- **Caching.** The market list is cached for 24 h and open interest for 10 min.
-- **Persistence.** The latest snapshot per coin is written to `funding_rate.json`, so a restart serves data immediately. History is kept in memory only.
+- **API budget.** Each symbol in a request costs one call, the limit is 40 calls/min, and a request takes at most 20 symbols. Predicted rates are fetched first every cycle. Open interest is refreshed on a rolling basis: a market is refetched once its value is 10 min old, oldest first, a few markets per cycle using the spare budget. Defaults (3 coins × 10 venues at 60 s) still come to about 33 calls/min, with no 10-minute burst. A token bucket enforces the limit. On a 429 the client waits for `Retry-After` and logs the wait as a warning. `bun run once` is a single poll, so it fetches all open interest at once.
+- **Caching.** The market list is cached for 24 h; open interest uses a per-market rolling refresh.
+- **Persistence.** The latest snapshot per coin is written to `funding_rate.json`, so a restart serves data immediately. On restart, open interest is also seeded from that file if it is at most 30 min old, so OI-weighted is available from the first poll. History is kept in memory only.
 
 ## Methodology
 
@@ -75,7 +75,7 @@ The dashboard and every snapshot show this state for each venue.
 
 $$\text{AVG} = \frac{1}{n}\sum_{i=1}^{n} r_i \qquad\qquad \text{OI-weighted} = \frac{\sum_i r_i \cdot OI_i}{\sum_i OI_i}$$
 
-The OI-weighted average only counts venues that also have a positive open interest.
+The OI-weighted average only counts venues that also have a positive open interest. It is `null` until open interest has been fetched for every used venue (about 3–4 minutes after a cold start without a recent `funding_rate.json`), and is never computed over a partially fetched set.
 
 ## Calibration
 
@@ -256,7 +256,7 @@ src/
   coinalyze/rate-limiter.ts  token bucket (40/min)
   funding/universe.ts        the ten venues and their rate periods
   funding/aggregate.ts       AVG / OI-weighted (pure)
-  funding/source.ts          FundingSource (venue resolution, staleness, components)
+  funding/source.ts          FundingSource (venue resolution, rolling OI, staleness, components)
 web/                         dashboard (Bun HTML import + lightweight-charts)
 scripts/calibrate/           offline calibration (Playwright; dev dependency)
 test/                        bun:test suites

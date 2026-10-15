@@ -54,15 +54,16 @@ const formatAge = (ms: number) => {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
 };
 
-const renderCard = (id: string, text: string | null, sign: number | null, timestamp: number | null) => {
+const renderCard = (id: string, text: string | null, sign: number | null, timestamp: number | null, note?: string) => {
   const card = $<HTMLElement>(id);
   const valueEl = card.querySelector(".value") as HTMLElement;
   const ageEl = card.querySelector(".age") as HTMLElement;
   const badge = card.querySelector(".badge") as HTMLElement;
+  const noted = text === null && timestamp !== null && note !== undefined;
   valueEl.textContent = text ?? "—";
   valueEl.className = sign === null ? "value" : `value ${sign >= 0 ? "positive" : "negative"}`;
-  ageEl.textContent = timestamp === null ? "waiting for data…" : formatAge(Date.now() - timestamp);
-  badge.hidden = timestamp === null || Date.now() - timestamp <= 3 * intervalMs;
+  ageEl.textContent = noted ? note : timestamp === null ? "waiting for data…" : formatAge(Date.now() - timestamp);
+  badge.hidden = noted || timestamp === null || Date.now() - timestamp <= 3 * intervalMs;
 };
 
 const renderCards = () => {
@@ -72,9 +73,9 @@ const renderCards = () => {
   const avg = s?.aggregated_predicted_funding_rate ?? null;
   const oi = s?.oi_weighted_predicted_funding_rate ?? null;
   renderCard("#card-avg", avg === null ? null : `${signed(avg, 4)}%`, avg, ts);
-  renderCard("#card-oi", oi === null ? null : `${signed(oi, 4)}%`, oi, ts);
+  renderCard("#card-oi", oi === null ? null : `${signed(oi, 4)}%`, oi, ts, "waiting for open interest…");
   const spread = avg !== null && oi !== null ? oi - avg : null;
-  renderCard("#card-spread", spread === null ? null : `${signed(spread, 4)} pp`, spread, ts);
+  renderCard("#card-spread", spread === null ? null : `${signed(spread, 4)} pp`, spread, ts, "waiting for open interest…");
   renderCard("#card-venues", s ? `${s.markets} / ${s.components.length}` : null, null, ts);
 };
 

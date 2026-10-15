@@ -34,7 +34,7 @@ Runtime modes:
 
 | File | Purpose |
 |---|---|
-| `src/main.ts` | Entry: config → store → source → loop → server; `--once`; SIGINT/SIGTERM shutdown. **Only owner of `process.exit`** in the service and of the static `web/index.html` import. |
+| `src/main.ts` | Entry: config → store → source → loop → server; seeds OI from the store after `load()`; `--once`; SIGINT/SIGTERM shutdown. **Only owner of `process.exit`** in the service and of the static `web/index.html` import. |
 | `src/config.ts` | `loadConfig(env, argv)` → `LoopConfig \| OnceConfig` (discriminated by `mode`); throws `ConfigError`. |
 | `src/coins.ts` | `COIN_REGISTRY` (symbol → Coinalyze slug), `chartUrl`. |
 | `src/types.ts` | `Snapshot` (wire = store = file format), `MarketComponent`, `HistoryPoint`, `Source`, `SourceStatus`. |
@@ -48,7 +48,7 @@ Runtime modes:
 | `src/coinalyze/rate-limiter.ts` | Token bucket, 40 tokens, 40/min refill. |
 | `src/funding/universe.ts` | **`VENUES`**: the ten venues (page label, exchange code, quote, `ratePeriodHours`). The single source of methodology truth, together with `STALE_AFTER_MS`. |
 | `src/funding/aggregate.ts` | `aggregate()` (pure AVG + OI-weighted). |
-| `src/funding/source.ts` | `FundingSource`: resolves venues against `/future-markets` (24h cache), OI cache 10 min, staleness filter, components, budget warning. Clock injectable. |
+| `src/funding/source.ts` | `FundingSource`: resolves venues against `/future-markets` (24h cache), rolling per-market OI refresh (oldest first, refetched once ≥ `OI_REFRESH_MS` old, spare budget per cycle), OI seeded from persisted snapshots, OI-weighted null until every used venue has OI, an OI failure does not block AVG, staleness filter, components, budget warning. Clock injectable. |
 | `scripts/calibrate/*` | `main.ts` (CLI), `analyze.ts` (pure: venue ratios, lag-aligned MAD, history SMA), `chart-page.ts`, `browser.ts`, `parse.ts`. |
 | `web/index.html`, `web/app.ts`, `web/style.css` | Dashboard: cards, AVG/OI-weighted chart (local time), per-venue table. Bun HTML import, `lightweight-charts` v5. |
 | `test/*.test.ts` | `bun:test`; no network, no browser. |
@@ -86,7 +86,7 @@ Bun auto-loads `.env`. Do NOT use `dotenv`. All parsing happens in `src/config.t
    - The API lists many more stablecoin perpetuals: Polymarket contracts, ETHBTC/ETHU/USD1 quotes, Lighter, dYdX, and a Coinbase feed that returned a 12-day-old value. Do not widen the venue list to "all STABLE perps".
    - `bun run calibrate` reports listing drift when the page changes.
 2. **Rate periods are measured.** Hyperliquid (`H`) and Kraken (`K`) report hourly rates (page ÷ API ≈ 8). Deribit, Huobi and OKX have no predicted rate in the API: they are omitted from the response rather than returned as `null`, and show as `no_rate`. Re-run the calibration if Coinalyze changes units.
-3. **API budget: 40 calls/min per key, 1 call per symbol.** Do not run the calibration tool and the service with the same key at the same time; together they exceed the budget and both get 429s.
+3. **API budget: 40 calls/min per key, 1 call per symbol.** Do not run the calibration tool and the service with the same key at the same time; together they exceed the budget and both get 429s. Cold start costs only predicted rates plus spare-budget OI, so the first publish arrives in seconds; OI-weighted stays null for ~3–4 cycles unless seeded from `DATA_FILE`.
 4. **API keys activate 2 minutes after generation**, and generating a new key deactivates the old one immediately. A fresh key returning 401 is expected for those 2 minutes.
 5. **Loops never exit.** `runSourceLoop` catches everything and retries next cycle. Never add `process.exit` outside `main.ts` startup/shutdown.
 6. **Calibration tool (`scripts/calibrate/`):**
