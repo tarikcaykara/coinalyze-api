@@ -44,7 +44,7 @@ Runtime modes:
 | `src/loop.ts` | `runSourceLoop`: drift-free (start-to-start), first poll immediate, never throws/exits; `abortableSleep`. |
 | `src/health.ts` | `computeHealth` (pure): ok if a poll succeeded within 3 intervals (or startup grace), else 503. |
 | `src/server.ts` | `createServer`: `Bun.serve` routes + WS protocol. |
-| `src/coinalyze/client.ts` | `CoinalyzeClient`: `api_key` header, ≤20 symbols per request, 429 `Retry-After` (3 attempts), 401 fails immediately; includes 1-minute history for calibration. |
+| `src/coinalyze/client.ts` | `CoinalyzeClient`: `api_key` header, ≤20 symbols per request, 429 `Retry-After` (3 attempts, each wait logged as WARN), 401 fails immediately; includes 1-minute history for calibration. |
 | `src/coinalyze/rate-limiter.ts` | Token bucket, 40 tokens, 40/min refill. |
 | `src/funding/universe.ts` | **`VENUES`**: the ten venues (page label, exchange code, quote, `ratePeriodHours`). The single source of methodology truth, together with `STALE_AFTER_MS`. |
 | `src/funding/aggregate.ts` | `aggregate()` (pure AVG + OI-weighted). |

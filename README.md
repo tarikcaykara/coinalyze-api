@@ -40,7 +40,7 @@ flowchart LR
 ```
 
 - **One loop.** Intervals are measured start-to-start and the first poll runs immediately. A failed cycle is logged, counted in `/health` and retried on the next cycle; the loop never exits the process.
-- **API budget.** Each symbol in a request costs one call, the limit is 40 calls/min, and a request takes at most 20 symbols. Defaults (3 coins × 10 venues at 60 s, open interest refreshed every 10 min) come to about 33 calls/min. A token bucket enforces the limit and `Retry-After` is honoured on 429.
+- **API budget.** Each symbol in a request costs one call, the limit is 40 calls/min, and a request takes at most 20 symbols. Defaults (3 coins × 10 venues at 60 s, open interest refreshed every 10 min) come to about 33 calls/min. A token bucket enforces the limit. On a 429 the client waits for `Retry-After` and logs the wait as a warning.
 - **Caching.** The market list is cached for 24 h and open interest for 10 min.
 - **Persistence.** The latest snapshot per coin is written to `funding_rate.json`, so a restart serves data immediately. History is kept in memory only.
 

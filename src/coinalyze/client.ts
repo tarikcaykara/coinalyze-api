@@ -1,4 +1,7 @@
+import { createLogger } from "../log.ts";
 import type { RateLimiter } from "./rate-limiter.ts";
+
+const log = createLogger("coinalyze");
 
 export interface Exchange {
   name: string;
@@ -111,7 +114,12 @@ export class CoinalyzeClient {
           throw new CoinalyzeApiError(`rate limited (429) after ${MAX_ATTEMPTS} attempts`);
         }
         const header = res.headers.get("retry-after") ?? "";
-        const seconds = /^\d+(\.\d+)?$/.test(header) ? Number(header) : DEFAULT_RETRY_AFTER_S;
+        const numeric = /^\d+(\.\d+)?$/.test(header);
+        const seconds = numeric ? Number(header) : DEFAULT_RETRY_AFTER_S;
+        log.warn(
+          `rate limited (429) on ${path}, attempt ${attempt}/${MAX_ATTEMPTS}; retrying in ${seconds}s` +
+            (numeric ? "" : " (default: Retry-After missing or not in seconds)"),
+        );
         await this.sleep(seconds * 1000);
         continue;
       }
