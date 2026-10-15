@@ -27,6 +27,7 @@ const source = new FundingSource({
   client: new CoinalyzeClient({ apiKey: config.coinalyzeApiKey, limiter: new RateLimiter() }),
   coins: config.coins,
   intervalMs: config.intervalMs,
+  openInterestPerCycle: config.mode === "once" ? Infinity : undefined,
 });
 
 if (config.mode === "once") {
@@ -43,6 +44,7 @@ if (config.mode === "once") {
 }
 
 await store.load();
+source.seedOpenInterest(store.latest());
 const status: SourceStatus = { intervalMs: source.intervalMs, lastSuccessAt: null, consecutiveFailures: 0, lastError: null };
 const startedAt = Date.now();
 const server = createServer({

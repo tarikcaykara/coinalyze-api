@@ -1,6 +1,6 @@
 import type { CoinalyzeClient, FutureMarket } from "../coinalyze/client.ts";
 import { COIN_REGISTRY, type CoinSymbol } from "../coins.ts";
-import { createLogger } from "../log.ts";
+import { createLogger, errorMessage } from "../log.ts";
 import type { MarketComponent, Snapshot, Source } from "../types.ts";
 import { aggregate } from "./aggregate.ts";
 import { VENUES, type Venue } from "./universe.ts";
@@ -8,7 +8,12 @@ import { VENUES, type Venue } from "./universe.ts";
 const log = createLogger("funding");
 
 const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
+/** Max age of a market's open interest before it is refetched. */
 export const OI_REFRESH_MS = 600000;
+/** Persisted snapshots older than this are not used to seed open interest. */
+export const OI_SEED_MAX_AGE_MS = 30 * 60 * 1000;
+/** API calls kept free per cycle. */
+const CALL_MARGIN = 2;
 /** Predicted rates older than this are excluded (live venues update about every minute). */
 export const STALE_AFTER_MS = 15 * 60 * 1000;
 const API_CALLS_PER_MIN = 40;
@@ -29,10 +34,17 @@ export class FundingSource implements Source {
   private readonly now: () => number;
   private venuesByCoin = new Map<CoinSymbol, ResolvedVenue[]>();
   private marketsAt: number | null = null;
-  private oiBySymbol = new Map<string, number>();
-  private oiAt: number | null = null;
+  private oiCache = new Map<string, { value: number | null; fetchedAt: number }>();
+  private readonly openInterestPerCycle: number | undefined;
 
-  constructor(opts: { client: Client; coins: CoinSymbol[]; intervalMs: number; now?: () => number }) {
+  constructor(opts: {
+    client: Client;
+    coins: CoinSymbol[];
+    intervalMs: number;
+    now?: () => number;
+    openInterestPerCycle?: number;
+  }) {
+    this.openInterestPerCycle = opts.openInterestPerCycle;
     this.client = opts.client;
     this.coins = opts.coins;
     this.intervalMs = opts.intervalMs;
@@ -40,12 +52,17 @@ export class FundingSource implements Source {
   }
 
   async poll(): Promise<Snapshot[]> {
-    await this.resolveVenues();
+    const marketsCalls = await this.resolveVenues();
     const symbols = [...this.venuesByCoin.values()].flat().flatMap((v) => (v.symbol === null ? [] : [v.symbol]));
-    await this.refreshOpenInterest(symbols);
 
     const rates = new Map<string, { value: number; update: number }>();
     for (const p of await this.client.predictedFundingRate(symbols)) rates.set(p.symbol, p);
+
+    try {
+      await this.refreshOpenInterest(symbols, marketsCalls);
+    } catch (e) {
+      log.warn(`open interest refresh failed: ${errorMessage(e)}; keeping cached values`);
+    }
 
     const now = this.now();
     const snapshots: Snapshot[] = [];
@@ -53,6 +70,7 @@ export class FundingSource implements Source {
       const components = venues.map(({ venue, symbol }) => this.component(venue, symbol, rates, now));
       const used = components.filter((c) => c.status === "used");
       const result = aggregate(used.map((c) => ({ rate: c.rate_8h, oiUsd: c.oi_usd })));
+      const oiComplete = used.every((c) => c.symbol !== null && this.oiCache.has(c.symbol));
       if (result.avg === null) {
         log.warn(`${coin}: no venue has a fresh predicted rate`);
         continue;
@@ -63,7 +81,7 @@ export class FundingSource implements Source {
         coin: COIN_REGISTRY[coin].slug,
         timestamp: now,
         aggregated_predicted_funding_rate: result.avg,
-        oi_weighted_predicted_funding_rate: result.oiWeighted,
+        oi_weighted_predicted_funding_rate: oiComplete ? result.oiWeighted : null,
         markets: result.count,
         unit: "percent_per_8h",
         components,
@@ -100,14 +118,15 @@ export class FundingSource implements Source {
       predicted_rate: value,
       rate_period_hours: venue.ratePeriodHours,
       rate_8h: value === null ? null : (value * 8) / venue.ratePeriodHours,
-      oi_usd: symbol === null ? null : (this.oiBySymbol.get(symbol) ?? null),
+      oi_usd: symbol === null ? null : (this.oiCache.get(symbol)?.value ?? null),
       updated_at: point?.update ?? null,
       status,
     };
   }
 
-  private async resolveVenues(): Promise<void> {
-    if (this.marketsAt !== null && this.now() - this.marketsAt <= MARKET_REFRESH_MS) return;
+  /** Returns the number of /future-markets calls made (0 or 1). */
+  private async resolveVenues(): Promise<number> {
+    if (this.marketsAt !== null && this.now() - this.marketsAt <= MARKET_REFRESH_MS) return 0;
     const perpetuals = (await this.client.futureMarkets()).filter(
       (m) => m.is_perpetual === true && m.margined === "STABLE",
     );
@@ -129,6 +148,7 @@ export class FundingSource implements Source {
         `estimated ${callsPerMin.toFixed(1)} calls/min exceeds the ${API_CALLS_PER_MIN}/min API limit; cycles will be throttled`,
       );
     }
+    return 1;
   }
 
   private matchVenue(coin: CoinSymbol, venue: Venue, perpetuals: FutureMarket[]): string | null {
@@ -142,11 +162,41 @@ export class FundingSource implements Source {
     return null;
   }
 
-  private async refreshOpenInterest(symbols: string[]): Promise<void> {
-    if (this.oiAt !== null && this.now() - this.oiAt <= OI_REFRESH_MS) return;
-    const oi = new Map<string, number>();
-    for (const p of await this.client.openInterestUsd(symbols)) oi.set(p.symbol, p.value);
-    this.oiBySymbol = oi;
-    this.oiAt = this.now();
+  private async refreshOpenInterest(symbols: string[], marketsCalls: number): Promise<void> {
+    const now = this.now();
+    const n = symbols.length;
+    const slots = this.openInterestPerCycle ?? this.defaultSlots(n, marketsCalls);
+    const due = symbols
+      .filter((s) => {
+        const e = this.oiCache.get(s);
+        return e === undefined || now - e.fetchedAt >= OI_REFRESH_MS;
+      })
+      .sort((a, b) => (this.oiCache.get(a)?.fetchedAt ?? 0) - (this.oiCache.get(b)?.fetchedAt ?? 0));
+    const batch = due.slice(0, slots);
+    if (batch.length === 0) return;
+    const returned = new Map<string, number>();
+    for (const p of await this.client.openInterestUsd(batch)) returned.set(p.symbol, p.value);
+    const fetchedAt = this.now();
+    for (const s of batch) this.oiCache.set(s, { value: returned.get(s) ?? null, fetchedAt });
+  }
+
+  private defaultSlots(n: number, marketsCalls: number): number {
+    const steady = Math.ceil((n * this.intervalMs) / OI_REFRESH_MS);
+    const cap = Math.min(API_CALLS_PER_MIN, (API_CALLS_PER_MIN * this.intervalMs) / 60000) - CALL_MARGIN;
+    return Math.max(steady, Math.floor(cap - n - marketsCalls));
+  }
+
+  /** Seeds the OI cache from persisted snapshots; seeds are due immediately so real fetches replace them first. */
+  seedOpenInterest(snapshots: Snapshot[]): void {
+    let count = 0;
+    for (const s of snapshots) {
+      if (this.now() - s.timestamp > OI_SEED_MAX_AGE_MS) continue;
+      for (const c of s.components) {
+        if (c.symbol === null || c.oi_usd === null || !Number.isFinite(c.oi_usd) || this.oiCache.has(c.symbol)) continue;
+        this.oiCache.set(c.symbol, { value: c.oi_usd, fetchedAt: s.timestamp - OI_REFRESH_MS });
+        count++;
+      }
+    }
+    if (count > 0) log.info(`seeded open interest for ${count} markets from persisted snapshots`);
   }
 }

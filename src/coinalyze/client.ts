@@ -1,4 +1,7 @@
+import { createLogger } from "../log.ts";
 import type { RateLimiter } from "./rate-limiter.ts";
+
+const log = createLogger("coinalyze");
 
 export interface Exchange {
   name: string;
@@ -59,13 +62,11 @@ export class CoinalyzeClient {
     this.sleep = opts.sleep ?? Bun.sleep;
   }
 
-  async exchanges(): Promise<Exchange[]> {
-    await this.limiter.acquire(1);
+  exchanges(): Promise<Exchange[]> {
     return this.request<Exchange[]>("/exchanges");
   }
 
-  async futureMarkets(): Promise<FutureMarket[]> {
-    await this.limiter.acquire(1);
+  futureMarkets(): Promise<FutureMarket[]> {
     return this.request<FutureMarket[]>("/future-markets");
   }
 
@@ -91,27 +92,35 @@ export class CoinalyzeClient {
     const results: T[] = [];
     for (let i = 0; i < symbols.length; i += MAX_SYMBOLS_PER_REQUEST) {
       const chunk = symbols.slice(i, i + MAX_SYMBOLS_PER_REQUEST);
-      await this.limiter.acquire(chunk.length);
-      results.push(...(await this.request<T[]>(path, { symbols: chunk.join(","), ...params })));
+      results.push(...(await this.request<T[]>(path, { symbols: chunk.join(","), ...params }, chunk.length)));
     }
     return results;
   }
 
-  private async request<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+  /** `cost` is the number of API calls the request counts as. Every attempt goes through the limiter. */
+  private async request<T>(path: string, params: Record<string, string> = {}, cost = 1): Promise<T> {
     const query = new URLSearchParams(params).toString();
     const url = `${this.baseUrl}${path}${query ? `?${query}` : ""}`;
     for (let attempt = 1; ; attempt++) {
+      const refund = await this.limiter.acquire(cost);
       const res = await this.fetch(url, {
         headers: { api_key: this.apiKey },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (res.status === 401) throw new CoinalyzeApiError("invalid COINALYZE_API_KEY (401)");
       if (res.status === 429) {
+        // A rejected request does not use the server's budget; the retry is counted when it is sent.
+        refund();
         if (attempt >= MAX_ATTEMPTS) {
           throw new CoinalyzeApiError(`rate limited (429) after ${MAX_ATTEMPTS} attempts`);
         }
         const header = res.headers.get("retry-after") ?? "";
-        const seconds = /^\d+(\.\d+)?$/.test(header) ? Number(header) : DEFAULT_RETRY_AFTER_S;
+        const numeric = /^\d+(\.\d+)?$/.test(header);
+        const seconds = numeric ? Number(header) : DEFAULT_RETRY_AFTER_S;
+        log.warn(
+          `rate limited (429) on ${path}, attempt ${attempt}/${MAX_ATTEMPTS}; retrying in ${seconds}s` +
+            (numeric ? "" : " (default: Retry-After missing or not in seconds)"),
+        );
         await this.sleep(seconds * 1000);
         continue;
       }
