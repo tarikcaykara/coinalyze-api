@@ -111,6 +111,8 @@ v2 (PR #12, squash-merged into `master` as `3b9e717` and tagged `v2.0.0`). The h
   - The Docker image shrank from 1.32 GB to ~240 MB.
 - **Calibration and smoke pass:** measured venue ratios and chart tracking in the README (`5ede760`); README examples and the dashboard screenshot come from real smoke runs.
 
+v2.1 (PR #14, squash-merged as `06ccff3` and tagged `v2.1.0`): predicted rates first, rolling per-market OI refresh with a seed from `DATA_FILE`, OI-weighted `null` until every used venue has OI, a sliding-window rate limiter matching the server, and 429 waits logged as WARN. Cold-start first publish dropped from 60–115 s to under 1 s, and the hidden 429 every cycle is gone.
+
 Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
 
 ## Working conventions for this repo
@@ -122,7 +124,7 @@ Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTER
 - **Prefer `Bun.*` APIs** over `node:*` equivalents. See the Bun section below.
 - **Style:** 2-space indent, double quotes, semicolons, arrow functions for top-level helpers. No linter/formatter enforced.
 - **Commits and branches follow Conventional Commits** (`feat:`, `fix:`, `refactor:`, `docs:`, `build:`, `perf:`; branches like `feat/<topic>`).
-- **PRs are squash-merged into `master`**, one commit per PR titled with the PR title. Release tags go on the squash commit. Reference PR numbers or squash commits in "Project evolution", because branch hashes do not reach `master`.
+- **PRs are squash-merged into `master`**, one commit per PR titled with the PR title. Release tags go on the squash commit. Reference PR numbers or squash commits in "Project evolution", because branch hashes do not reach `master`. After a merge, pull `master` and delete the merged local branch with `git branch -D` (`-d` refuses squash-merged branches); check first that its content is on `master`.
 
 ---
 
