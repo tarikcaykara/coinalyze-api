@@ -189,9 +189,9 @@ A `Snapshot`, which is also the element type of the `funding_rate.json` array (`
   "type": "snapshot",
   "symbol": "ETH",
   "coin": "ethereum",
-  "timestamp": 1791929664000,
-  "aggregated_predicted_funding_rate": 0.00498,
-  "oi_weighted_predicted_funding_rate": 0.00643,
+  "timestamp": 1792092779396,
+  "aggregated_predicted_funding_rate": 0.006532189523809485,
+  "oi_weighted_predicted_funding_rate": 0.008911031122840309,
   "markets": 7,
   "unit": "percent_per_8h",
   "components": [
@@ -201,8 +201,8 @@ A `Snapshot`, which is also the element type of the `funding_rate.json` array (`
       "predicted_rate": 0.00125,
       "rate_period_hours": 1,
       "rate_8h": 0.01,
-      "oi_usd": 2683000000,
-      "updated_at": 1791929660000,
+      "oi_usd": 2605596912.2449627,
+      "updated_at": 1792092778452,
       "status": "used"
     }
   ]
@@ -230,7 +230,7 @@ A `HistoryPoint` is a `Snapshot` without `components`.
 Returns `200` with `"status":"ok"` while the last successful poll is within 3 intervals. Before the first success, it also stays `ok` until 3 intervals have passed since startup. Otherwise it returns `503` with `"status":"down"`.
 
 ```json
-{ "status": "ok", "uptime_s": 181, "interval_ms": 60000, "last_success_at": 1791928058694, "consecutive_failures": 0, "last_error": null }
+{ "status": "ok", "uptime_s": 1034, "interval_ms": 60000, "last_success_at": 1792094065961, "consecutive_failures": 0, "last_error": null }
 ```
 
 ## Development

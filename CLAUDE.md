@@ -103,12 +103,13 @@ v1 (single `scraper.js`, chart scraping), oldest-first: `942fd72` initial Playwr
 
 v2 (`feat/v2-hybrid-rewrite`):
 - **First pass (hybrid):** API source + live chart source, both runtime (`f23e4cd` … `c713af9`).
-- **Second pass (API-only):**
+- **Second pass (API-only, `271a953`):**
   - The chart moved to the offline calibration tool.
   - The ten-venue list and the staleness filter were added.
   - Per-venue components went into snapshots and the dashboard.
   - Shared protocol types and a mode-specific config were introduced.
   - The Docker image shrank from 1.32 GB to ~240 MB.
+- **Calibration and smoke pass:** measured venue ratios and chart tracking in the README (`5ede760`); README examples and the dashboard screenshot come from real smoke runs.
 
 Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
 
