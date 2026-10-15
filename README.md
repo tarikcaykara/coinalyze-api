@@ -1,6 +1,6 @@
-# Coinalyze Aggregated Predicted Funding Rate
+# Predicted Funding Aggregator
 
-[![CI](https://github.com/tarikcaykara/coinalyze-api/actions/workflows/ci.yml/badge.svg)](https://github.com/tarikcaykara/coinalyze-api/actions/workflows/ci.yml)
+[![CI](https://github.com/tarikcaykara/predicted-funding-aggregator/actions/workflows/ci.yml/badge.svg)](https://github.com/tarikcaykara/predicted-funding-aggregator/actions/workflows/ci.yml)
 [![Bun](https://img.shields.io/badge/Bun-1.4-black?logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-compose-2496ed?logo=docker&logoColor=white)](https://www.docker.com)
@@ -124,8 +124,8 @@ Every venue with an API rate lands within 5% of its expected ratio, so the 8h fa
 2. **Configure and run:**
 
 ```bash
-git clone https://github.com/tarikcaykara/coinalyze-api.git
-cd coinalyze-api
+git clone https://github.com/tarikcaykara/predicted-funding-aggregator.git
+cd predicted-funding-aggregator
 cp .env.example .env    # set AUTH_TOKEN and COINALYZE_API_KEY
 bun install
 bun run start           # dashboard on http://localhost:3000, WebSocket on /ws

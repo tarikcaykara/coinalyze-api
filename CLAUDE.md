@@ -1,10 +1,10 @@
 ---
-description: Project context and Bun runtime conventions for coinalyze-api.
+description: Project context and Bun runtime conventions for predicted-funding-aggregator.
 globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
 alwaysApply: false
 ---
 
-# Project: coinalyze-api
+# Project: predicted-funding-aggregator
 
 ## What this project is
 
@@ -112,6 +112,8 @@ v2 (PR #12, squash-merged into `master` as `3b9e717` and tagged `v2.0.0`). The h
 - **Calibration and smoke pass:** measured venue ratios and chart tracking in the README (`5ede760`); README examples and the dashboard screenshot come from real smoke runs.
 
 v2.1 (PR #14, squash-merged as `06ccff3` and tagged `v2.1.0`): predicted rates first, rolling per-market OI refresh with a seed from `DATA_FILE`, OI-weighted `null` until every used venue has OI, a sliding-window rate limiter matching the server, and 429 waits logged as WARN. Cold-start first publish dropped from 60–115 s to under 1 s, and the hidden 429 every cycle is gone.
+
+Renamed from `coinalyze-api` to `predicted-funding-aggregator` after v2.1, because the old name read like an official Coinalyze client. Local checkouts and the macOS keychain item (`coinalyze-api`, which holds the Coinalyze key) may still use the old name.
 
 Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
 
