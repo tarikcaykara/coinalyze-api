@@ -9,7 +9,6 @@
 A self-hosted Bun + TypeScript service that computes the cross-venue **aggregated predicted funding rate** for BTC, ETH and SOL from the official Coinalyze API, normalized to % per 8h, and streams it over an authenticated WebSocket. Every published number can be traced to its venues: a live dashboard shows the simple and open-interest-weighted averages next to the per-venue breakdown they come from.
 
 ![Live dashboard: AVG, OI-weighted, spread, venues used and the per-venue breakdown for ETH](docs/dashboard.png)
-<!-- Replace with docs/demo.gif once recorded -->
 
 ## Why
 
@@ -277,7 +276,7 @@ v1 was a single 390-line `scraper.js` that read the number off the chart with he
 
 ## Disclaimer
 
-Educational project, not affiliated with Coinalyze. The service uses only the official API. The optional offline calibration tool automates a browser session on coinalyze.net; review Coinalyze's terms before running it. Data source: [Coinalyze](https://coinalyze.net).
+Educational project, not affiliated with Coinalyze, and not financial advice. The service uses only the official API. The optional offline calibration tool automates a browser session on coinalyze.net; review Coinalyze's terms before running it. Data source: [Coinalyze](https://coinalyze.net).
 
 ## License
 
