@@ -44,8 +44,8 @@ Runtime modes:
 | `src/loop.ts` | `runSourceLoop`: drift-free (start-to-start), first poll immediate, never throws/exits; `abortableSleep`. |
 | `src/health.ts` | `computeHealth` (pure): ok if a poll succeeded within 3 intervals (or startup grace), else 503. |
 | `src/server.ts` | `createServer`: `Bun.serve` routes + WS protocol. |
-| `src/coinalyze/client.ts` | `CoinalyzeClient`: `api_key` header, ≤20 symbols per request, 429 `Retry-After` (3 attempts, each wait logged as WARN), 401 fails immediately; includes 1-minute history for calibration. |
-| `src/coinalyze/rate-limiter.ts` | Token bucket, 40 tokens, 40/min refill. |
+| `src/coinalyze/client.ts` | `CoinalyzeClient`: `api_key` header, ≤20 symbols per request, every attempt goes through the limiter, 429 `Retry-After` (3 attempts, each wait logged as WARN, the rejected call refunded to the limiter), 401 fails immediately; includes 1-minute history for calibration. |
+| `src/coinalyze/rate-limiter.ts` | Sliding window like the server's: 40 calls per 60 s, each call held 60 s + 250 ms margin; `acquire()` returns a refund for rejected requests. |
 | `src/funding/universe.ts` | **`VENUES`**: the ten venues (page label, exchange code, quote, `ratePeriodHours`). The single source of methodology truth, together with `STALE_AFTER_MS`. |
 | `src/funding/aggregate.ts` | `aggregate()` (pure AVG + OI-weighted). |
 | `src/funding/source.ts` | `FundingSource`: resolves venues against `/future-markets` (24h cache), rolling per-market OI refresh (oldest first, refetched once ≥ `OI_REFRESH_MS` old, spare budget per cycle), OI seeded from persisted snapshots, OI-weighted null until every used venue has OI, an OI failure does not block AVG, staleness filter, components, budget warning. Clock injectable. |
@@ -86,7 +86,7 @@ Bun auto-loads `.env`. Do NOT use `dotenv`. All parsing happens in `src/config.t
    - The API lists many more stablecoin perpetuals: Polymarket contracts, ETHBTC/ETHU/USD1 quotes, Lighter, dYdX, and a Coinbase feed that returned a 12-day-old value. Do not widen the venue list to "all STABLE perps".
    - `bun run calibrate` reports listing drift when the page changes.
 2. **Rate periods are measured.** Hyperliquid (`H`) and Kraken (`K`) report hourly rates (page ÷ API ≈ 8). Deribit, Huobi and OKX have no predicted rate in the API: they are omitted from the response rather than returned as `null`, and show as `no_rate`. Re-run the calibration if Coinalyze changes units.
-3. **API budget: 40 calls/min per key, 1 call per symbol.** Do not run the calibration tool and the service with the same key at the same time; together they exceed the budget and both get 429s. Cold start costs only predicted rates plus spare-budget OI, so the first publish arrives in seconds; OI-weighted stays null for ~3–4 cycles unless seeded from `DATA_FILE`.
+3. **API budget: 40 calls/min per key, 1 call per symbol, counted over a sliding 60 s window.** Do not run the calibration tool and the service with the same key at the same time; together they exceed the budget and both get 429s. Two consecutive 30+-call cycles never fit in one window, so each cycle's first request waits for the previous cycle's first request to leave it: polls settle at about `INTERVAL_MS` + 250 ms, and that wait is by design (a 429 is not). Cold start costs only predicted rates plus spare-budget OI, so the first publish arrives in seconds; OI-weighted stays null for ~3–4 cycles unless seeded from `DATA_FILE`.
 4. **API keys activate 2 minutes after generation**, and generating a new key deactivates the old one immediately. A fresh key returning 401 is expected for those 2 minutes.
 5. **Loops never exit.** `runSourceLoop` catches everything and retries next cycle. Never add `process.exit` outside `main.ts` startup/shutdown.
 6. **Calibration tool (`scripts/calibrate/`):**

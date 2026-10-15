@@ -32,13 +32,19 @@ beforeEach(() => {
 const makeClient = () => {
   const sleeps: number[] = [];
   const acquired: number[] = [];
+  const refunded: number[] = [];
   const client = new CoinalyzeClient({
     apiKey: "test-key",
     baseUrl: `http://127.0.0.1:${server.port}/v1`,
-    limiter: { acquire: async (n) => void acquired.push(n) },
+    limiter: {
+      acquire: async (n) => {
+        acquired.push(n);
+        return () => void refunded.push(n);
+      },
+    },
     sleep: async (ms) => void sleeps.push(ms),
   });
-  return { client, sleeps, acquired };
+  return { client, sleeps, acquired, refunded };
 };
 
 test("25 symbols are split into chunks of 20 and 5, each costing its size", async () => {
@@ -52,11 +58,13 @@ test("25 symbols are split into chunks of 20 and 5, each costing its size", asyn
   expect(points.map((p) => p.symbol)).toEqual(symbols);
 });
 
-test("429 honours Retry-After, then succeeds", async () => {
-  const { client, sleeps } = makeClient();
+test("429 refunds the rejected call, honours Retry-After, then succeeds", async () => {
+  const { client, sleeps, acquired, refunded } = makeClient();
   responses = [() => new Response("slow down", { status: 429, headers: { "Retry-After": "1" } })];
   const points = await client.openInterestUsd(["ETHUSDT_PERP.A"]);
   expect(sleeps).toEqual([1000]);
+  expect(acquired).toEqual([1, 1]);
+  expect(refunded).toEqual([1]);
   expect(points).toEqual([{ symbol: "ETHUSDT_PERP.A", value: 0.01, update: 1 }]);
 });
 
