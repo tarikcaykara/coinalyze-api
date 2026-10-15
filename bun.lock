@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "coinalyze-api",
+      "name": "predicted-funding-aggregator",
       "dependencies": {
         "lightweight-charts": "^5.2.1",
       },

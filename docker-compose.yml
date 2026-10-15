@@ -1,7 +1,9 @@
+name: predicted-funding-aggregator
+
 services:
   app:
     build: .
-    image: coinalyze-api
+    image: predicted-funding-aggregator
     env_file: .env
     environment:
       DATA_FILE: /app/data/funding_rate.json

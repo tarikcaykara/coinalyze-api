@@ -1,5 +1,5 @@
 {
-  "name": "coinalyze-api",
+  "name": "predicted-funding-aggregator",
   "private": true,
   "scripts": {
     "start": "bun run src/main.ts",
