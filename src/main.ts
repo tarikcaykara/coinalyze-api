@@ -22,7 +22,13 @@ try {
   process.exit(1);
 }
 
-const store = new SnapshotStore({ file: config.dataFile, historyLimit: HISTORY_LIMIT });
+let store: SnapshotStore;
+try {
+  store = new SnapshotStore({ file: config.dataFile, historyFile: config.historyFile, historyLimit: HISTORY_LIMIT });
+} catch (e) {
+  log.error(`cannot open HISTORY_FILE ${config.historyFile}: ${errorMessage(e)}`);
+  process.exit(1);
+}
 const source = new FundingSource({
   client: new CoinalyzeClient({ apiKey: config.coinalyzeApiKey, limiter: new RateLimiter() }),
   coins: config.coins,

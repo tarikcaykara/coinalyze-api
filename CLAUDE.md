@@ -20,7 +20,7 @@ Primary consumers are internal services that need a stable, explainable funding-
 ```
 FundingSource ─(INTERVAL_MS)→ runSourceLoop → SnapshotStore ─┬→ funding_rate.json (latest per coin, DATA_FILE)
                                    │                         ├→ WS channel "funding-rate" → dashboard / clients
-                                   │                         └→ in-memory history (HISTORY_LIMIT points per coin)
+                                   │                         └→ history (HISTORY_LIMIT points per coin, in memory + HISTORY_FILE SQLite)
                                    └→ SourceStatus → GET /health
 ```
 
@@ -40,7 +40,7 @@ Runtime modes:
 | `src/types.ts` | `Snapshot` (wire = store = file format), `MarketComponent`, `HistoryPoint`, `Source`, `SourceStatus`. |
 | `src/protocol.ts` | WS `ClientMessage`/`ServerMessage`, `CLOSE` codes, `CHANNEL`, `HISTORY_LIMIT`. Shared by `server.ts` and `web/app.ts`. |
 | `src/log.ts` | `createLogger(scope)`: writes to **stderr only** (stdout is reserved for `--once` JSON and the calibration report). |
-| `src/store.ts` | `SnapshotStore`: latest per coin (persisted), history of `HistoryPoint`s, subscribers. |
+| `src/store.ts` | `SnapshotStore`: latest per coin (persisted to `DATA_FILE`), history of `HistoryPoint`s (persisted to `HISTORY_FILE` via `bun:sqlite`, one transaction per `add`, pruned to `historyLimit` per coin; `load()` seeds history from the DB only, never from the JSON), subscribers. The constructor opens the DB and throws on a bad file; `main.ts` exits 1. |
 | `src/loop.ts` | `runSourceLoop`: drift-free (start-to-start), first poll immediate, never throws/exits; `abortableSleep`. |
 | `src/health.ts` | `computeHealth` (pure): ok if a poll succeeded within 3 intervals (or startup grace), else 503. |
 | `src/server.ts` | `createServer`: `Bun.serve` routes + WS protocol. |
@@ -67,6 +67,7 @@ Bun auto-loads `.env`. Do NOT use `dotenv`. All parsing happens in `src/config.t
 | `COINS` | `BTC,ETH,SOL` | Must be keys of `COIN_REGISTRY` |
 | `INTERVAL_MS` | `60000` | 3 coins × 10 venues at 60 s ≈ 33 of 40 calls/min |
 | `DATA_FILE` | `./funding_rate.json` | Compose sets `/app/data/funding_rate.json` on a named volume |
+| `HISTORY_FILE` | `./history.sqlite` | Chart history DB; compose sets `/app/data/history.sqlite` on the same volume |
 | `PING_INTERVAL_MS` | `30000` | |
 | `PONG_TIMEOUT_MS` | `65000` | |
 | `AUTH_TIMEOUT_MS` | `10000` | |
