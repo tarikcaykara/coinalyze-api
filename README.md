@@ -132,6 +132,8 @@ bun install
 bun run start           # dashboard on http://localhost:3000, WebSocket on /ws
 ```
 
+Open the dashboard and enter your `AUTH_TOKEN`. It is masked by default; **Show** reveals it and **Hide** masks it again. The token is kept in the browser's `localStorage`, so the page reconnects on reload. On screens narrower than 960 px the per-venue table becomes one card per venue, so no column is cut off on phones or tablets.
+
 To fetch one snapshot per coin, print it to stdout and exit (exit code 1 if no coin produced a value):
 
 ```bash

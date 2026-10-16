@@ -50,7 +50,7 @@ Runtime modes:
 | `src/funding/aggregate.ts` | `aggregate()` (pure AVG + OI-weighted). |
 | `src/funding/source.ts` | `FundingSource`: resolves venues against `/future-markets` (24h cache), rolling per-market OI refresh (oldest first, refetched once ≥ `OI_REFRESH_MS` old, spare budget per cycle), OI seeded from persisted snapshots, OI-weighted null until every used venue has OI, an OI failure does not block AVG, staleness filter, components, budget warning. Clock injectable. |
 | `scripts/calibrate/*` | `main.ts` (CLI), `analyze.ts` (pure: venue ratios, lag-aligned MAD, history SMA), `chart-page.ts`, `browser.ts`, `parse.ts`. |
-| `web/index.html`, `web/app.ts`, `web/style.css` | Dashboard: cards, AVG/OI-weighted chart (local time), per-venue table. Bun HTML import, `lightweight-charts` v5. |
+| `web/index.html`, `web/app.ts`, `web/style.css` | Dashboard: token field with Show/Hide toggle, cards, AVG/OI-weighted chart (local time), per-venue table (one card per venue below 960 px, labelled from the `<th>` text via `data-label`, so header text and `td:nth-child` placement in `style.css` must stay in column order). Bun HTML import, `lightweight-charts` v5. |
 | `test/*.test.ts` | `bun:test`; no network, no browser. |
 | `Dockerfile`, `docker-compose.yml` | Pinned `oven/bun:1.4.3-debian`, production deps only (~240 MB), non-root, healthcheck; compose adds the `data` volume and `init`. |
 | `.github/workflows/ci.yml` | `bun install --frozen-lockfile` → `bun run typecheck` → `bun test`. |
