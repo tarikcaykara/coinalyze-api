@@ -116,6 +116,8 @@ v2.1 (PR #14, squash-merged as `06ccff3` and tagged `v2.1.0`): predicted rates f
 
 Renamed from `coinalyze-api` to `predicted-funding-aggregator` after v2.1, because the old name read like an official Coinalyze client. Local checkouts and the macOS keychain item (`coinalyze-api`, which holds the Coinalyze key) may still use the old name.
 
+v2.2 (PR #17, squash-merged as `cc8832e` and tagged `v2.2.0`): the dashboard history is persisted to `HISTORY_FILE` (`bun:sqlite`, one transaction per cycle, pruned to `HISTORY_LIMIT` per coin), so the chart survives restarts and container re-creation. `load()` seeds history from the DB only and `funding_rate.json` only seeds latest, so points are not duplicated. A bad `HISTORY_FILE` exits 1 before any API call. Upgrading from v2.1 starts with empty history; there is no migration from `funding_rate.json`.
+
 Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
 
 ## Working conventions for this repo
