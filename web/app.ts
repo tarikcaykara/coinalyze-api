@@ -18,8 +18,11 @@ const $ = <T extends HTMLElement>(selector: string) => document.querySelector(se
 
 const statusEl = $<HTMLSpanElement>("#status");
 const tokenInput = $<HTMLInputElement>("#token");
+const tokenToggle = $<HTMLButtonElement>("#token-toggle");
 const tabsEl = $<HTMLElement>("#tabs");
 const venuesEl = $<HTMLTableSectionElement>("#venues");
+// Narrow screens render each row as a card and label every cell from its column header.
+const venueColumns = [...document.querySelectorAll<HTMLTableCellElement>("table.venues thead th")].map((th) => th.textContent ?? "");
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -112,6 +115,7 @@ const renderVenues = () => {
         ...cells.map((text, i) => {
           const td = document.createElement("td");
           td.textContent = text;
+          td.dataset.label = venueColumns[i];
           if (i >= 2 && i <= 6) td.className = "num";
           return td;
         }),
@@ -286,6 +290,12 @@ const connect = () => {
 $<HTMLFormElement>("#connect").addEventListener("submit", (event) => {
   event.preventDefault();
   connect();
+});
+
+tokenToggle.addEventListener("click", () => {
+  const reveal = tokenInput.type === "password";
+  tokenInput.type = reveal ? "text" : "password";
+  tokenToggle.textContent = reveal ? "Hide" : "Show";
 });
 
 setInterval(renderCards, 1000);

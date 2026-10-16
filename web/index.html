@@ -16,7 +16,10 @@
   </header>
 
   <form id="connect" class="connect" autocomplete="off">
-    <input id="token" type="password" placeholder="AUTH_TOKEN" aria-label="Auth token" required>
+    <div class="token-field">
+      <input id="token" type="password" placeholder="AUTH_TOKEN" aria-label="Auth token" required>
+      <button type="button" id="token-toggle" class="token-toggle" aria-controls="token">Show</button>
+    </div>
     <button type="submit">Connect</button>
   </form>
 
