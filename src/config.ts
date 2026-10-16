@@ -4,28 +4,18 @@ export class ConfigError extends Error {
   override name = "ConfigError";
 }
 
-interface BaseConfig {
+export interface Config {
   coinalyzeApiKey: string;
   coins: CoinSymbol[];
   intervalMs: number;
   dataFile: string;
   historyFile: string;
-}
-
-export interface OnceConfig extends BaseConfig {
-  mode: "once";
-}
-
-export interface LoopConfig extends BaseConfig {
-  mode: "loop";
   port: number;
   authToken: string;
   pingIntervalMs: number;
   pongTimeoutMs: number;
   authTimeoutMs: number;
 }
-
-export type Config = OnceConfig | LoopConfig;
 
 type Env = Record<string, string | undefined>;
 
@@ -39,9 +29,9 @@ const positiveInt = (env: Env, name: string, fallback: number): number => {
   return value;
 };
 
-const required = (env: Env, name: string, why = ""): string => {
+const required = (env: Env, name: string): string => {
   const value = env[name]?.trim();
-  if (!value) throw new ConfigError(`Missing required env var ${name}${why}`);
+  if (!value) throw new ConfigError(`Missing required env var ${name}`);
   return value;
 };
 
@@ -58,22 +48,15 @@ const parseCoins = (raw: string): CoinSymbol[] => {
   return coins;
 };
 
-export const loadConfig = (env: Env, argv: string[]): Config => {
-  const base: BaseConfig = {
-    coinalyzeApiKey: required(env, "COINALYZE_API_KEY"),
-    coins: parseCoins(env.COINS ?? "BTC,ETH,SOL"),
-    intervalMs: positiveInt(env, "INTERVAL_MS", 60000),
-    dataFile: env.DATA_FILE?.trim() || "./funding_rate.json",
-    historyFile: env.HISTORY_FILE?.trim() || "./history.sqlite",
-  };
-  if (argv.includes("--once")) return { ...base, mode: "once" };
-  return {
-    ...base,
-    mode: "loop",
-    port: positiveInt(env, "PORT", 3000),
-    authToken: required(env, "AUTH_TOKEN", " (required in loop mode)"),
-    pingIntervalMs: positiveInt(env, "PING_INTERVAL_MS", 30000),
-    pongTimeoutMs: positiveInt(env, "PONG_TIMEOUT_MS", 65000),
-    authTimeoutMs: positiveInt(env, "AUTH_TIMEOUT_MS", 10000),
-  };
-};
+export const loadConfig = (env: Env): Config => ({
+  coinalyzeApiKey: required(env, "COINALYZE_API_KEY"),
+  coins: parseCoins(env.COINS ?? "BTC,ETH,SOL"),
+  intervalMs: positiveInt(env, "INTERVAL_MS", 60000),
+  dataFile: env.DATA_FILE?.trim() || "./funding_rate.json",
+  historyFile: env.HISTORY_FILE?.trim() || "./history.sqlite",
+  port: positiveInt(env, "PORT", 3000),
+  authToken: required(env, "AUTH_TOKEN"),
+  pingIntervalMs: positiveInt(env, "PING_INTERVAL_MS", 30000),
+  pongTimeoutMs: positiveInt(env, "PONG_TIMEOUT_MS", 65000),
+  authTimeoutMs: positiveInt(env, "AUTH_TIMEOUT_MS", 10000),
+});

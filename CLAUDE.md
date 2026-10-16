@@ -26,20 +26,19 @@ FundingSource ─(INTERVAL_MS)→ runSourceLoop → SnapshotStore ─┬→ fund
 
 Runtime modes:
 
-- **`bun run start`**: loop mode. Serves the dashboard (`GET /`), `/health` and `/ws`.
-- **`bun run once`**: polls once, prints a JSON array to stdout, writes `funding_rate.json`, then exits 0 (or 1 if nothing was produced).
+- **`bun run start`**: the service. Serves the dashboard (`GET /`), `/health` and `/ws`.
 - **`bun run calibrate`**: the offline calibration tool. Needs `bunx playwright install chromium`; dev dependencies only.
 
 ## Module map
 
 | File | Purpose |
 |---|---|
-| `src/main.ts` | Entry: config → store → source → loop → server; seeds OI from the store after `load()`; `--once`; SIGINT/SIGTERM shutdown. **Only owner of `process.exit`** in the service and of the static `web/index.html` import. |
-| `src/config.ts` | `loadConfig(env, argv)` → `LoopConfig \| OnceConfig` (discriminated by `mode`); throws `ConfigError`. |
+| `src/main.ts` | Entry: config → store → source → loop → server; seeds OI from the store after `load()`; SIGINT/SIGTERM shutdown. **Only owner of `process.exit`** in the service and of the static `web/index.html` import. |
+| `src/config.ts` | `loadConfig(env)` → `Config`; throws `ConfigError`. |
 | `src/coins.ts` | `COIN_REGISTRY` (symbol → Coinalyze slug), `chartUrl`. |
 | `src/types.ts` | `Snapshot` (wire = store = file format), `MarketComponent`, `HistoryPoint`, `Source`, `SourceStatus`. |
 | `src/protocol.ts` | WS `ClientMessage`/`ServerMessage`, `CLOSE` codes, `CHANNEL`, `HISTORY_LIMIT`. Shared by `server.ts` and `web/app.ts`. |
-| `src/log.ts` | `createLogger(scope)`: writes to **stderr only** (stdout is reserved for `--once` JSON and the calibration report). |
+| `src/log.ts` | `createLogger(scope)`: writes to **stderr only** (stdout is reserved for the calibration report). |
 | `src/store.ts` | `SnapshotStore`: latest per coin (persisted to `DATA_FILE`), history of `HistoryPoint`s (persisted to `HISTORY_FILE` via `bun:sqlite`, one transaction per `add`, pruned to `historyLimit` per coin; `load()` seeds history from the DB only, never from the JSON), subscribers. The constructor opens the DB and throws on a bad file; `main.ts` exits 1. |
 | `src/loop.ts` | `runSourceLoop`: drift-free (start-to-start), first poll immediate, never throws/exits; `abortableSleep`. |
 | `src/health.ts` | `computeHealth` (pure): ok if a poll succeeded within 3 intervals (or startup grace), else 503. |
@@ -61,8 +60,8 @@ Bun auto-loads `.env`. Do NOT use `dotenv`. All parsing happens in `src/config.t
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PORT` | `3000` | Loop mode only |
-| `AUTH_TOKEN` | none | Required in loop mode. There is no default token. |
+| `PORT` | `3000` | |
+| `AUTH_TOKEN` | none | Required. There is no default token. |
 | `COINALYZE_API_KEY` | none | Always required |
 | `COINS` | `BTC,ETH,SOL` | Must be keys of `COIN_REGISTRY` |
 | `INTERVAL_MS` | `60000` | 3 coins × 10 venues at 60 s ≈ 33 of 40 calls/min |
@@ -118,7 +117,7 @@ Renamed from `coinalyze-api` to `predicted-funding-aggregator` after v2.1, becau
 
 v2.2 (PR #17, squash-merged as `cc8832e` and tagged `v2.2.0`): the dashboard history is persisted to `HISTORY_FILE` (`bun:sqlite`, one transaction per cycle, pruned to `HISTORY_LIMIT` per coin), so the chart survives restarts and container re-creation. `load()` seeds history from the DB only and `funding_rate.json` only seeds latest, so points are not duplicated. A bad `HISTORY_FILE` exits 1 before any API call. Upgrading from v2.1 starts with empty history; there is no migration from `funding_rate.json`.
 
-Headed mode, a separate server file, the live chart source, `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
+Headed mode, a separate server file, the live chart source, the `--once` mode (`bun run once`, removed after v2.2), `SOURCES`/`API_INTERVAL_MS`/`CHART_INTERVAL_MS` and "all STABLE perps" scope are historical.
 
 ## Working conventions for this repo
 

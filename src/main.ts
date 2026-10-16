@@ -9,13 +9,13 @@ import { runSourceLoop } from "./loop.ts";
 import { HISTORY_LIMIT } from "./protocol.ts";
 import { createServer } from "./server.ts";
 import { SnapshotStore } from "./store.ts";
-import type { Snapshot, SourceStatus } from "./types.ts";
+import type { SourceStatus } from "./types.ts";
 
 const log = createLogger("main");
 
 let config: Config;
 try {
-  config = loadConfig(process.env, process.argv);
+  config = loadConfig(process.env);
 } catch (e) {
   if (!(e instanceof ConfigError)) throw e;
   console.error(e.message);
@@ -33,21 +33,7 @@ const source = new FundingSource({
   client: new CoinalyzeClient({ apiKey: config.coinalyzeApiKey, limiter: new RateLimiter() }),
   coins: config.coins,
   intervalMs: config.intervalMs,
-  openInterestPerCycle: config.mode === "once" ? Infinity : undefined,
 });
-
-if (config.mode === "once") {
-  let snapshots: Snapshot[];
-  try {
-    snapshots = await source.poll();
-  } catch (e) {
-    log.error(errorMessage(e));
-    process.exit(1);
-  }
-  await store.add(snapshots);
-  console.log(JSON.stringify(snapshots, null, 2));
-  process.exit(0);
-}
 
 await store.load();
 source.seedOpenInterest(store.latest());

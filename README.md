@@ -40,9 +40,9 @@ flowchart LR
 ```
 
 - **One loop.** Intervals are measured start-to-start and the first poll runs immediately. A failed cycle is logged, counted in `/health` and retried on the next cycle; the loop never exits the process.
-- **API budget.** Each symbol in a request costs one call, the limit is 40 calls per sliding 60 s window, and a request takes at most 20 symbols. Predicted rates are fetched first every cycle. Open interest is refreshed on a rolling basis: a market is refetched once its value is 10 min old, oldest first, a few markets per cycle using the spare budget. Defaults (3 coins × 10 venues at 60 s) still come to about 33 calls/min, with no 10-minute burst. A client-side sliding window mirrors the server's, so the client waits instead of being rejected. Two consecutive cycles never fit in one window, so each cycle's first request waits for the previous cycle's first request to leave it, and polls settle at about `INTERVAL_MS` + 250 ms. A 429 (for example from another process using the same key) is retried after `Retry-After` and logged as a warning. `bun run once` is a single poll, so it fetches all open interest at once.
+- **API budget.** Each symbol in a request costs one call, the limit is 40 calls per sliding 60 s window, and a request takes at most 20 symbols. Predicted rates are fetched first every cycle. Open interest is refreshed on a rolling basis: a market is refetched once its value is 10 min old, oldest first, a few markets per cycle using the spare budget. Defaults (3 coins × 10 venues at 60 s) still come to about 33 calls/min, with no 10-minute burst. A client-side sliding window mirrors the server's, so the client waits instead of being rejected. Two consecutive cycles never fit in one window, so each cycle's first request waits for the previous cycle's first request to leave it, and polls settle at about `INTERVAL_MS` + 250 ms. A 429 (for example from another process using the same key) is retried after `Retry-After` and logged as a warning.
 - **Caching.** The market list is cached for 24 h; open interest uses a per-market rolling refresh.
-- **Persistence.** The latest snapshot per coin is written to `funding_rate.json`, so a restart serves data immediately. On restart, open interest is also seeded from that file if it is at most 30 min old, so OI-weighted is available from the first poll. The chart history (the last 720 points per coin, about 12 h at 60 s) is written to the SQLite file `history.sqlite` in one transaction per cycle and pruned to the same 720 points per coin, so the dashboard chart survives a restart. After a downtime the chart shows the points before it, a gap, then the new points. `bun run once` appends its point too.
+- **Persistence.** The latest snapshot per coin is written to `funding_rate.json`, so a restart serves data immediately. On restart, open interest is also seeded from that file if it is at most 30 min old, so OI-weighted is available from the first poll. The chart history (the last 720 points per coin, about 12 h at 60 s) is written to the SQLite file `history.sqlite` in one transaction per cycle and pruned to the same 720 points per coin, so the dashboard chart survives a restart. After a downtime the chart shows the points before it, a gap, then the new points.
 
 ## Methodology
 
@@ -134,13 +134,6 @@ bun run start           # dashboard on http://localhost:3000, WebSocket on /ws
 
 Open the dashboard and enter your `AUTH_TOKEN`. It is masked by default; **Show** reveals it and **Hide** masks it again. The token is kept in the browser's `localStorage`, so the page reconnects on reload. On screens narrower than 960 px the per-venue table becomes one card per venue, so no column is cut off on phones or tablets.
 
-To fetch one snapshot per coin, print it to stdout and exit (exit code 1 if no coin produced a value):
-
-```bash
-bun run once
-COINS=ETH bun run once
-```
-
 Bun loads `.env` automatically, so no `dotenv` package is needed.
 
 ## Docker / Compose
@@ -160,7 +153,7 @@ docker compose ps       # "healthy" after the first check
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3000` | HTTP + WebSocket port |
-| `AUTH_TOKEN` | *(required in loop mode)* | Token WebSocket clients must send; there is no default |
+| `AUTH_TOKEN` | *(required)* | Token WebSocket clients must send; there is no default |
 | `COINALYZE_API_KEY` | *(required)* | Coinalyze API key |
 | `COINS` | `BTC,ETH,SOL` | Comma-separated subset of `BTC`, `ETH`, `SOL` |
 | `INTERVAL_MS` | `60000` | Poll interval. 3 coins at 60 s ≈ 33 of the 40 calls/min |
@@ -245,12 +238,12 @@ bun run typecheck   # tsc --noEmit (strict)
 
 ```
 src/
-  main.ts                    entry: config → store → source → loop → server; --once; signals
-  config.ts                  env/argv → LoopConfig | OnceConfig
+  main.ts                    entry: config → store → source → loop → server; signals
+  config.ts                  env → Config
   coins.ts                   coin registry (symbol → Coinalyze slug)
   types.ts                   Snapshot, MarketComponent, Source
   protocol.ts                WebSocket messages, close codes, history limit (shared with web/)
-  log.ts                     stderr logger (stdout is reserved for --once JSON)
+  log.ts                     stderr logger (stdout is reserved for the calibration report)
   store.ts                   SnapshotStore (latest → funding_rate.json, history → history.sqlite)
   loop.ts                    runSourceLoop (drift-free, never exits)
   health.ts                  computeHealth (pure)
