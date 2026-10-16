@@ -9,6 +9,7 @@ interface BaseConfig {
   coins: CoinSymbol[];
   intervalMs: number;
   dataFile: string;
+  historyFile: string;
 }
 
 export interface OnceConfig extends BaseConfig {
@@ -63,6 +64,7 @@ export const loadConfig = (env: Env, argv: string[]): Config => {
     coins: parseCoins(env.COINS ?? "BTC,ETH,SOL"),
     intervalMs: positiveInt(env, "INTERVAL_MS", 60000),
     dataFile: env.DATA_FILE?.trim() || "./funding_rate.json",
+    historyFile: env.HISTORY_FILE?.trim() || "./history.sqlite",
   };
   if (argv.includes("--once")) return { ...base, mode: "once" };
   return {

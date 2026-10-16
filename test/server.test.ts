@@ -8,7 +8,7 @@ import { SnapshotStore } from "../src/store.ts";
 import type { Snapshot } from "../src/types.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "coinalyze-server-"));
-const store = new SnapshotStore({ file: join(dir, "funding_rate.json"), historyLimit: 10 });
+const store = new SnapshotStore({ file: join(dir, "funding_rate.json"), historyFile: join(dir, "history.sqlite"), historyLimit: 10 });
 
 const snap = (timestamp: number): Snapshot => ({
   type: "snapshot",
