@@ -3,7 +3,6 @@
   "private": true,
   "scripts": {
     "start": "bun run src/main.ts",
-    "once": "bun run src/main.ts --once",
     "calibrate": "bun run scripts/calibrate/main.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"

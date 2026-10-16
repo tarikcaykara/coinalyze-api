@@ -4,7 +4,7 @@ export interface Logger {
   error(msg: string): void;
 }
 
-// stderr only: stdout is reserved for the --once JSON output.
+// stderr only: stdout is reserved for the calibration report.
 const write = (level: string, scope: string, msg: string) => {
   console.error(`${new Date().toISOString()} ${level} [${scope}] ${msg}`);
 };
